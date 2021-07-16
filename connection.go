@@ -30,29 +30,29 @@ func (conn *connection) getChannel() (*Channel, error) {
 	logger := conn.logger.WithField("connection", conn.id).WithField("method", "getChannel")
 	node := (*entry)(atomic.LoadPointer(&conn.first))
 	for {
-		logger.Printf("try change node %d idle => used", node.payload.(*Channel).id)
+		logger.Debugf("try change node %d idle => used", node.payload.(*Channel).id)
 		if atomic.CompareAndSwapInt32(&node.payload.(*Channel).state, Idle, Used) {
-			logger.Printf("%d idle => used success", node.payload.(*Channel).id)
+			logger.Debugf("%d idle => used success", node.payload.(*Channel).id)
 			atomic.AddInt64(&conn.usedCount, 1)
 			atomic.AddInt64(&conn.idleCount, -1)
 			// 如果当前通道是空闲状态，则标记为使用中并返回
 			return node.payload.(*Channel), nil
 		}
-		logger.Printf("%d idle => used fail", node.payload.(*Channel).id)
+		logger.Debugf("%d idle => used fail", node.payload.(*Channel).id)
 		next := atomic.LoadPointer(&node.next)
 		if next != nil {
 			// 如果下一个节点还有，则继续查找
 			node = (*entry)(next)
-			logger.Printf("change to next node %d", node.payload.(*Channel).id)
+			logger.Debugf("change to next node %d", node.payload.(*Channel).id)
 			continue
 		}
-		logger.Printf("alloc new channel ...")
+		logger.Debugln("alloc new channel ...")
 		// 申请新通道
 		if err := conn.allocChannel(); err != nil {
-			logger.Printf("alloc new channel fail: %v", err)
+			logger.Errorf("alloc new channel fail: %v", err)
 			return nil, err
 		}
-		logger.Printf("alloc new channel success")
+		logger.Debugln("alloc new channel success")
 		// 返回链表头
 		node = (*entry)(atomic.LoadPointer(&conn.first))
 	}
@@ -68,22 +68,22 @@ func (conn *connection) allocChannel() error {
 	if conn.maximumCount > 0 {
 		if now := atomic.LoadInt64(&conn.allocCount); now >= conn.maximumCount {
 			// 当前申请的通道数超过最大的通道数了，返回通道满的限制
-			logger.Printf("now %d >= maximum %d channel maximum!", now, conn.maximumCount)
+			logger.Warnf("now %d >= maximum %d channel maximum!", now, conn.maximumCount)
 			return ErrChannelMaximum
 		}
 	}
-	logger.Println("create channel...")
+	logger.Debugln("create channel...")
 	channel, err := conn.Connection.Channel()
 	if err != nil {
 		// todo 此处需要处理，不同错误，当错误是关闭的连接，则需要进行重连
-		logger.Printf("create channel fail: %v", err)
+		logger.Errorf("create channel fail: %v", err)
 		return err
 	}
-	logger.Println("create channel success")
+	logger.Debugln("create channel success")
 	// 此处增加申请数，并发可能会造成超出最大通道数，超出的将在放回时，做丢弃处理
 	atomic.AddInt64(&conn.allocCount, 1)
 	newNode := &entry{payload: &Channel{Channel: channel, id: atomic.AddUint64(&conn.serial, 1), cid: conn.id, state: Idle}}
-	logger.Printf("new node %d", newNode.payload.(*Channel).id)
+	logger.Debugf("new node %d", newNode.payload.(*Channel).id)
 	// 改变节点第一个为新申请的节点，并将新节点的下一个节点设置为原先的链表头
 	newNode.next = atomic.SwapPointer(&conn.first, unsafe.Pointer(newNode))
 	// 存储旧链表头节点的上一个节点为新表头
@@ -122,7 +122,7 @@ func newConnection(id uint64, endpoint string, opt Options) (*connection, error)
 	// 初始化闲置通道
 	for i := 0; i < idleCount; i++ {
 		if err := conn.allocChannel(); err != nil {
-			conn.Close()
+			_ = conn.Close()
 			return nil, err
 		}
 	}
