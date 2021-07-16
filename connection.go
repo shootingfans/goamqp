@@ -15,7 +15,7 @@ type connection struct {
 	*amqp.Connection
 	id           uint64             // 连接唯一ID
 	endpoint     string             // 此连接的amqp broker的节点地址
-	first        unsafe.Pointer     // 指向一个双向链表的头
+	first        unsafe.Pointer     // 指向一个双向链表的头，采用双链表是为了方便做移除节点操作
 	idleCount    int64              // 空闲Channel数量
 	usedCount    int64              // 使用Channel数量
 	allocCount   int64              // 申请Channel数量
@@ -27,7 +27,7 @@ type connection struct {
 // getChannel 从连接中获取一个通道
 // 此项逻辑为
 func (conn *connection) getChannel() (*Channel, error) {
-	logger := conn.logger.WithField("connection", conn.id).WithField("method", "getChannel")
+	logger := conn.logger.WithField("method", "getChannel")
 	node := (*entry)(atomic.LoadPointer(&conn.first))
 	for {
 		logger.Debugf("try change node %d idle => used", node.payload.(*Channel).id)
@@ -59,11 +59,29 @@ func (conn *connection) getChannel() (*Channel, error) {
 }
 
 func (conn *connection) putChannel(channel *Channel) bool {
-	return true
+	logger := conn.logger.WithField("method", "putChannel")
+	node := (*entry)(conn.first)
+	for {
+		if node.payload.(*Channel).id == channel.id {
+			logger.Debugf("channel %d state => idle", channel.id)
+			atomic.StoreInt32(&node.payload.(*Channel).state, Idle)
+			atomic.AddInt64(&conn.usedCount, -1)
+			atomic.AddInt64(&conn.idleCount, 1)
+			return true
+		}
+		next := atomic.LoadPointer(&node.next)
+		if next == nil {
+			break
+		}
+		node = (*entry)(next)
+	}
+	logger.Warnf("can't find channel %d in list", channel.id)
+	channel.Close()
+	return false
 }
 
 func (conn *connection) allocChannel() error {
-	logger := conn.logger.WithField("connection", conn.id).WithField("method", "allocChannel")
+	logger := conn.logger.WithField("method", "allocChannel")
 	// 如果没有节点，则判断当前是否超过最大通道数
 	if conn.maximumCount > 0 {
 		if now := atomic.LoadInt64(&conn.allocCount); now >= conn.maximumCount {
@@ -73,21 +91,26 @@ func (conn *connection) allocChannel() error {
 		}
 	}
 	logger.Debugln("create channel...")
+	// 申请数量+1
+	atomic.AddInt64(&conn.allocCount, 1)
 	channel, err := conn.Connection.Channel()
 	if err != nil {
+		// 申请失败-1
+		atomic.AddInt64(&conn.allocCount, -1)
 		// todo 此处需要处理，不同错误，当错误是关闭的连接，则需要进行重连
 		logger.Errorf("create channel fail: %v", err)
 		return err
 	}
 	logger.Debugln("create channel success")
-	// 此处增加申请数，并发可能会造成超出最大通道数，超出的将在放回时，做丢弃处理
-	atomic.AddInt64(&conn.allocCount, 1)
+	// 空闲+1
+	atomic.AddInt64(&conn.idleCount, 1)
 	newNode := &entry{payload: &Channel{Channel: channel, id: atomic.AddUint64(&conn.serial, 1), cid: conn.id, state: Idle}}
 	logger.Debugf("new node %d", newNode.payload.(*Channel).id)
 	// 改变节点第一个为新申请的节点，并将新节点的下一个节点设置为原先的链表头
 	newNode.next = atomic.SwapPointer(&conn.first, unsafe.Pointer(newNode))
-	// 存储旧链表头节点的上一个节点为新表头
+	// 判断旧节点是不是空，当第一次申请时，旧节点是nil，若不判断会panic
 	if newNode.next != nil {
+		// 存储旧链表头节点的上一个节点为新表头
 		atomic.StorePointer(&(*entry)(newNode.next).prev, unsafe.Pointer(newNode))
 	}
 	return nil
@@ -113,7 +136,7 @@ func newConnection(id uint64, endpoint string, opt Options) (*connection, error)
 		id:           id,
 		endpoint:     endpoint,
 		maximumCount: int64(opt.MaximumChannelCountPerConnection),
-		logger:       opt.Logger,
+		logger:       opt.Logger.WithField("connection", id).WithField("endpoint", endpoint),
 	}
 	idleCount := 1
 	if opt.IdleChannelCountPerConnection > 1 {
