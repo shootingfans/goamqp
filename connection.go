@@ -25,7 +25,6 @@ type connection struct {
 }
 
 // getChannel 从连接中获取一个通道
-// 此项逻辑为
 func (conn *connection) getChannel() (*Channel, error) {
 	logger := conn.logger.WithField("method", "getChannel")
 	node := (*entry)(atomic.LoadPointer(&conn.first))
@@ -58,6 +57,7 @@ func (conn *connection) getChannel() (*Channel, error) {
 	}
 }
 
+// putChannel 将一个通道放入连接中
 func (conn *connection) putChannel(channel *Channel) bool {
 	logger := conn.logger.WithField("method", "putChannel")
 	node := (*entry)(conn.first)
@@ -80,6 +80,7 @@ func (conn *connection) putChannel(channel *Channel) bool {
 	return false
 }
 
+// allocChannel 从连接中申请新通道
 func (conn *connection) allocChannel() error {
 	logger := conn.logger.WithField("method", "allocChannel")
 	// 如果没有节点，则判断当前是否超过最大通道数
