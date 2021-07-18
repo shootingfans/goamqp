@@ -1,18 +1,29 @@
 package goamqp
 
 import (
+	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestConnection(t *testing.T) {
+func newTestConnection(t *testing.T, opts ...Option) (*connection, error) {
+	endpoint := os.Getenv("AMQP_ENDPOINTS")
+	t.Logf("use endpoint %s for test", endpoint)
 	opt := newDefaultOptions()
-	WithIdleChannelCountPerConnection(5)(&opt)
-	conn, err := newConnection(1, "amqp://root:123456@10.88.88.154:5672", opt)
+	for _, o := range opts {
+		o(&opt)
+	}
+	return newConnection(1, endpoint, opt)
+}
+
+func TestConnectionGetChannel(t *testing.T) {
+	conn, err := newTestConnection(t, WithIdleChannelCountPerConnection(5))
 	assert.Nil(t, err)
 	defer conn.Close()
 	assert.Equal(t, conn.idleCount, int64(5))
@@ -43,4 +54,50 @@ func TestConnection(t *testing.T) {
 		break
 	}
 	t.Log(strings.Join(link, " -> "))
+}
+
+func TestConnectionPutChannel(t *testing.T) {
+	conn, err := newTestConnection(t, WithIdleChannelCountPerConnection(1), WithMaximumChannelCountPerConnection(5))
+	assert.Nil(t, err)
+	defer conn.Close()
+	var wg sync.WaitGroup
+	routineCount := 10
+	routineLoopCount := 5
+	var getCount int32
+	reportChan := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		for range ticker.C {
+			select {
+			case <-reportChan:
+				ticker.Stop()
+				return
+			default:
+				t.Logf("now count %d", atomic.LoadInt32(&getCount))
+				assert.LessOrEqual(t, atomic.LoadInt32(&getCount), int32(5))
+			}
+		}
+	}()
+	for i := 0; i < routineCount; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			for j := 0; j < routineLoopCount; j++ {
+				channel, err := conn.getChannel()
+				if atomic.LoadInt32(&getCount) < 5 {
+					assert.Nil(t, err)
+					atomic.AddInt32(&getCount, 1)
+					t.Logf("%d get channel", index)
+					time.Sleep(time.Millisecond * 500)
+					conn.putChannel(channel)
+					atomic.AddInt32(&getCount, -1)
+					t.Logf("%d put channel", index)
+				} else {
+					t.Logf("%d get channel fail: %v", index, err)
+					time.Sleep(time.Millisecond * 100)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
 }
