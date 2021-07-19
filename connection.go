@@ -24,9 +24,17 @@ type connection struct {
 	logger       logrus.FieldLogger // 日志
 }
 
+// NoBusy 用于判断是否有通道可以获取
+func (conn *connection) NoBusy() bool {
+	// 有空闲的数量或者不限制通道数量或者当前申请通道数量小于最大通道数量
+	return atomic.LoadInt64(&conn.idleCount) > 0 ||
+		(conn.maximumCount == 0) ||
+		(atomic.LoadInt64(&conn.allocCount) < conn.maximumCount)
+}
+
 // getChannel 从连接中获取一个通道
 func (conn *connection) getChannel() (*Channel, error) {
-	logger := conn.logger.WithField("method", "getChannel")
+	logger := conn.logger.WithField("method", "connection.getChannel")
 	node := (*entry)(atomic.LoadPointer(&conn.first))
 	for {
 		logger.Debugf("try change node %d idle => used", node.payload.(*Channel).id)
@@ -59,7 +67,7 @@ func (conn *connection) getChannel() (*Channel, error) {
 
 // putChannel 将一个通道放入连接中
 func (conn *connection) putChannel(channel *Channel) bool {
-	logger := conn.logger.WithField("method", "putChannel")
+	logger := conn.logger.WithField("method", "connection.putChannel")
 	node := (*entry)(conn.first)
 	for {
 		if node.payload.(*Channel).id == channel.id {
@@ -82,7 +90,7 @@ func (conn *connection) putChannel(channel *Channel) bool {
 
 // allocChannel 从连接中申请新通道
 func (conn *connection) allocChannel() error {
-	logger := conn.logger.WithField("method", "allocChannel")
+	logger := conn.logger.WithField("method", "connection.allocChannel")
 	// 如果没有节点，则判断当前是否超过最大通道数
 	if conn.maximumCount > 0 {
 		if now := atomic.LoadInt64(&conn.allocCount); now >= conn.maximumCount {
@@ -106,7 +114,7 @@ func (conn *connection) allocChannel() error {
 	// 空闲+1
 	atomic.AddInt64(&conn.idleCount, 1)
 	newNode := &entry{payload: &Channel{Channel: channel, id: atomic.AddUint64(&conn.serial, 1), cid: conn.id, state: Idle}}
-	logger.Debugf("new node %d", newNode.payload.(*Channel).id)
+	logger.Debugf("new channel node %d", newNode.payload.(*Channel).id)
 	// 改变节点第一个为新申请的节点，并将新节点的下一个节点设置为原先的链表头
 	newNode.next = atomic.SwapPointer(&conn.first, unsafe.Pointer(newNode))
 	// 判断旧节点是不是空，当第一次申请时，旧节点是nil，若不判断会panic
