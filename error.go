@@ -8,6 +8,7 @@ import (
 var (
 	ErrChannelMaximum = errors.New("channel is up to maximum") // 通道到达配置的最大值
 	ErrIllegalOptions = errors.New("illegal options")          // 非法的配置
+	ErrPoolClosed     = errors.New("pool is closed")           // 连接池已关闭
 )
 
 // NewIllegalOptionsError 新建一个非法配置的错误
