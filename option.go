@@ -25,6 +25,7 @@ type Options struct {
 	IdleChannelCountPerConnection    int                // 每个连接空闲通道数
 	AMQPConfig                       amqp.Config        // 可传入amqp的配置，其中最大通道限制、连接地址、连接超时时间将被上面的节点地址、连接超时时间、每个连接最大通道数所覆盖
 	Logger                           logrus.FieldLogger // 可传入实现此接口的日志
+	Blocking                         bool               // 是否阻塞模式，非阻塞模式将在获取通道时等候
 }
 
 // Validate 用于校验参数是否有效
@@ -131,5 +132,12 @@ func WithAMQPConfig(cfg amqp.Config) Option {
 func WithLogger(logger logrus.FieldLogger) Option {
 	return func(options *Options) {
 		options.Logger = logger
+	}
+}
+
+// WithBlocking 是否使用阻塞模式
+func WithBlocking(blocking bool) Option {
+	return func(options *Options) {
+		options.Blocking = blocking
 	}
 }

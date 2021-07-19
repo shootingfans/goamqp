@@ -1,6 +1,8 @@
 package goamqp
 
 import (
+	"errors"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 )
@@ -38,6 +40,7 @@ type pool struct {
 	balancerIndex uint64         // 用于做endpoint的负载使用
 	closed        int32          // 标识是否关闭了连接池
 	allocCount    int64          // 申请数量
+	cond          *sync.Cond
 }
 
 func (p *pool) Cap() int {
@@ -49,6 +52,11 @@ func (p *pool) Size() int {
 }
 
 func (p *pool) allocConnection() error {
+	if p.opt.Blocking {
+		p.cond.L.Lock()
+		defer p.cond.L.Unlock()
+		defer p.cond.Broadcast()
+	}
 	logger := p.opt.Logger.WithField("method", "pool.allocConnection")
 	// 如果最大连接数配置大于0，则需要判断
 	if p.opt.MaximumConnectionCount > 0 {
@@ -111,15 +119,27 @@ func (p *pool) GetChannel() (*Channel, error) {
 		lg.Debugln("alloc new connection")
 		if err := p.allocConnection(); err != nil {
 			lg.Errorf("alloc new connection fail: %v", err)
+			if errors.Is(err, ErrChannelMaximum) && p.opt.Blocking {
+				p.cond.L.Lock()
+				p.cond.Wait()
+				p.cond.L.Unlock()
+				goto toFirst
+			}
 			return nil, err
 		}
 		lg.Debugln("alloc new connection success")
+	toFirst:
 		// 返回链表头
 		node = (*entry)(atomic.LoadPointer(&p.first))
 	}
 }
 
 func (p *pool) PutChannel(channel *Channel) bool {
+	if p.opt.Blocking {
+		p.cond.L.Lock()
+		defer p.cond.L.Unlock()
+		defer p.cond.Broadcast()
+	}
 	logger := p.opt.Logger.WithField("method", "pool.PutChannel")
 	if atomic.LoadInt32(&p.closed) == 1 {
 		logger.Warnln("pool is closed")
@@ -175,11 +195,15 @@ func NewPoolByOptions(opt Options) (Pool, error) {
 		idleConnectionCount = opt.IdleConnectionCount
 	}
 	po := &pool{opt: opt}
+	if po.opt.Blocking {
+		po.cond = sync.NewCond(&sync.RWMutex{})
+	}
 	for i := 0; i < idleConnectionCount; i++ {
 		if err := po.allocConnection(); err != nil {
 			return nil, err
 		}
 	}
+	opt.Logger.Debugf("init pool %d connections finish", idleConnectionCount)
 	return po, nil
 }
 

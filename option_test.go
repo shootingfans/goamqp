@@ -1,11 +1,12 @@
 package goamqp
 
 import (
+	"testing"
+	"time"
+
 	"github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
-	"testing"
-	"time"
 )
 
 func TestOptions_Validate(t *testing.T) {
@@ -134,5 +135,10 @@ func TestOptions(t *testing.T) {
 		}}
 		WithAMQPConfig(cfg)(&opt)
 		assert.EqualValues(t, cfg.Properties, opt.AMQPConfig.Properties)
+	})
+	t.Run("test WithBlocking", func(t *testing.T) {
+		assert.False(t, opt.Blocking)
+		WithBlocking(true)(&opt)
+		assert.True(t, opt.Blocking)
 	})
 }
