@@ -3,29 +3,38 @@ package goamqp
 import (
 	"time"
 
+	"github.com/shootingfans/goamqp/retry_policy"
+
 	"github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 )
 
 const (
-	DefaultConnectionTimeout       = time.Second * 5 // 默认连接超时时间
-	DefaultConnectionAliveDuration = time.Minute * 5 // 默认连接存活时间
-	DefaultChannelAliveDuration    = time.Minute * 5 // 默认通道存活时间
+	DefaultConnectionTimeout       = time.Second * 5  // 默认连接超时时间
+	DefaultConnectionAliveDuration = time.Minute * 5  // 默认连接存活时间
+	DefaultChannelAliveDuration    = time.Minute * 5  // 默认通道存活时间
+	DefaultRetryMaximumAttempts    = 3                // 断开连接后重试次数
+	DefaultRetryInterval           = time.Second * 10 // 断开连接后重试间隔
 )
+
+func defaultRetryFailure(err error) {
+	panic(err)
+}
 
 // Options 配置
 type Options struct {
-	Endpoints                        []string           // amqp节点地址，可传入多个
-	ConnectTimeout                   time.Duration      // 连接超时时间
-	MaximumConnectionCount           int                // 最大连接数，0为不限制
-	MaximumChannelCountPerConnection int                // 每个连接最大通道数，0为不限制
-	ConnectionAliveDuration          time.Duration      // 连接存活时间，超过这个时间的空闲连接在保证空闲连接数情况下会被回收关闭，若配置为0则不回收
-	ChannelAliveDuration             time.Duration      // 通道存活时间，超过这个时间的空闲通道在保证空闲连接数情况下会被回收关闭，若配置为0则不回收
-	IdleConnectionCount              int                // 空闲连接数
-	IdleChannelCountPerConnection    int                // 每个连接空闲通道数
-	AMQPConfig                       amqp.Config        // 可传入amqp的配置，其中最大通道限制、连接地址、连接超时时间将被上面的节点地址、连接超时时间、每个连接最大通道数所覆盖
-	Logger                           logrus.FieldLogger // 可传入实现此接口的日志
-	Blocking                         bool               // 是否阻塞模式，非阻塞模式将在获取通道时等候
+	Endpoints                        []string                 // amqp节点地址，可传入多个
+	ConnectTimeout                   time.Duration            // 连接超时时间
+	MaximumConnectionCount           int                      // 最大连接数，0为不限制
+	MaximumChannelCountPerConnection int                      // 每个连接最大通道数，0为不限制
+	ConnectionAliveDuration          time.Duration            // 连接存活时间，超过这个时间的空闲连接在保证空闲连接数情况下会被回收关闭，若配置为0则不回收
+	ChannelAliveDuration             time.Duration            // 通道存活时间，超过这个时间的空闲通道在保证空闲连接数情况下会被回收关闭，若配置为0则不回收
+	IdleConnectionCount              int                      // 空闲连接数
+	IdleChannelCountPerConnection    int                      // 每个连接空闲通道数
+	AMQPConfig                       amqp.Config              // 可传入amqp的配置，其中最大通道限制、连接地址、连接超时时间将被上面的节点地址、连接超时时间、每个连接最大通道数所覆盖
+	Logger                           logrus.FieldLogger       // 可传入实现此接口的日志
+	Blocking                         bool                     // 是否阻塞模式，非阻塞模式将在获取通道时等候
+	RetryPolicy                      retry_policy.RetryPolicy // 重试策略
 }
 
 // Validate 用于校验参数是否有效
@@ -36,6 +45,9 @@ func (o Options) Validate() error {
 	}
 	if o.ConnectTimeout <= 0 {
 		return NewIllegalOptionsError("connect timeout should greater than 0")
+	}
+	if o.RetryPolicy == nil {
+		return NewIllegalOptionsError("retry policy must set")
 	}
 	for key, val := range map[string]int{
 		"maximum connection count":             o.MaximumConnectionCount,
@@ -59,6 +71,7 @@ func newDefaultOptions() Options {
 		ConnectionAliveDuration: DefaultConnectionAliveDuration,
 		ChannelAliveDuration:    DefaultChannelAliveDuration,
 		Logger:                  logrus.StandardLogger(),
+		RetryPolicy:             retry_policy.NewDefaultPolicy(DefaultRetryMaximumAttempts, DefaultRetryInterval, defaultRetryFailure),
 	}
 }
 
@@ -139,5 +152,12 @@ func WithLogger(logger logrus.FieldLogger) Option {
 func WithBlocking(blocking bool) Option {
 	return func(options *Options) {
 		options.Blocking = blocking
+	}
+}
+
+// WithRetryPolicy 配置重试策略
+func WithRetryPolicy(policy retry_policy.RetryPolicy) Option {
+	return func(options *Options) {
+		options.RetryPolicy = policy
 	}
 }
