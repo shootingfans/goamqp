@@ -22,8 +22,6 @@ type connection struct {
 	maximumCount int64              // 最大Channel数量
 	serial       uint64             // 序号，用于增加来为Channel赋值唯一ID
 	logger       logrus.FieldLogger // 日志
-	//blocking     bool               // 是否阻塞模式
-	//cond         *sync.Cond
 }
 
 // NoBusy 用于判断是否有通道可以获取
@@ -59,14 +57,6 @@ func (conn *connection) getChannel() (*Channel, error) {
 		// 申请新通道
 		if err := conn.allocChannel(); err != nil {
 			logger.Errorf("alloc new channel fail: %v", err)
-			//if conn.blocking && errors.Is(err, ErrChannelMaximum) {
-			//	// 如果阻塞模式，且当前满通道限制，则阻塞等候
-			//	conn.cond.L.Lock()
-			//	conn.cond.Wait()
-			//	conn.cond.L.Unlock()
-			//	// 等待有新的通道放回后则跳转到表头重新查找
-			//	goto toFirst
-			//}
 			return nil, err
 		}
 		logger.Debugln("alloc new channel success")
@@ -78,11 +68,6 @@ func (conn *connection) getChannel() (*Channel, error) {
 
 // putChannel 将一个通道放入连接中
 func (conn *connection) putChannel(channel *Channel) bool {
-	//if conn.blocking {
-	//	conn.cond.L.Lock()
-	//	defer conn.cond.L.Unlock()
-	//	defer conn.cond.Broadcast()
-	//}
 	logger := conn.logger.WithField("method", "connection.putChannel")
 	node := (*entry)(conn.first)
 	for {
@@ -106,11 +91,6 @@ func (conn *connection) putChannel(channel *Channel) bool {
 
 // allocChannel 从连接中申请新通道
 func (conn *connection) allocChannel() error {
-	//if conn.blocking {
-	//	conn.cond.L.Lock()
-	//	defer conn.cond.L.Unlock()
-	//	defer conn.cond.Broadcast()
-	//}
 	logger := conn.logger.WithField("method", "connection.allocChannel")
 	// 如果没有节点，则判断当前是否超过最大通道数
 	if conn.maximumCount > 0 {
@@ -167,15 +147,11 @@ func newConnection(id uint64, endpoint string, opt Options) (*connection, error)
 		endpoint:     endpoint,
 		maximumCount: int64(opt.MaximumChannelCountPerConnection),
 		logger:       opt.Logger.WithField("connection", id).WithField("endpoint", endpoint),
-		//blocking:     opt.Blocking,
 	}
 	idleCount := 1
 	if opt.IdleChannelCountPerConnection > 1 {
 		idleCount = opt.IdleChannelCountPerConnection
 	}
-	//if conn.blocking {
-	//	conn.cond = sync.NewCond(&sync.RWMutex{})
-	//}
 	// 初始化闲置通道
 	for i := 0; i < idleCount; i++ {
 		if err := conn.allocChannel(); err != nil {
