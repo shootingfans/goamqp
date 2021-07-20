@@ -6,7 +6,7 @@
 
 ![流程图](https://github.com/shootingfans/goamqp/blob/main/resource/goamqp_connection_get_channel.png?raw=true)
 
-## 流程说明:
+## 流程说明
 
 1. 进入 `connection.getChannel` 方法
 2. 从链表头节点(`conn.first`)开始遍历
