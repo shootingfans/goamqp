@@ -4,7 +4,7 @@
 
 ## 流程
 
-![流程图](https://github.com/shootingfans/goamqp/blob/main/resource/pool_get_channel.png?raw=true)
+![流程图](https://github.com/shootingfans/goamqp/blob/main/resource/goamqp_pool_get_channel.png?raw=true)
 
 ## 流程说明
 
