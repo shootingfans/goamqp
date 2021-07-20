@@ -2,6 +2,7 @@ package goamqp
 
 import (
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -9,10 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
-func newTestConnection(t *testing.T, opts ...Option) (*connection, error) {
+func newTestConnection(t *testing.T, opts ...Option) (*warpConnection, error) {
 	endpoint := os.Getenv("AMQP_ENDPOINTS")
 	t.Logf("use endpoint %s for test", endpoint)
 	opt := newDefaultOptions()
@@ -100,4 +102,22 @@ func TestConnectionPutChannel(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+func TestConnectionKeepAlive(t *testing.T) {
+	logger := logrus.New()
+	logger.SetLevel(logrus.DebugLevel)
+	conn, err := newTestConnection(t,
+		WithIdleChannelCountPerConnection(5),
+		WithMaximumChannelCountPerConnection(10),
+		WithLogger(logger),
+	)
+	assert.Nil(t, err)
+	c, err := conn.getChannel()
+	assert.Nil(t, err)
+	time.Sleep(time.Minute * 2)
+	conn.putChannel(c)
+	conn = nil
+	runtime.GC()
+	time.Sleep(time.Second * 5)
 }

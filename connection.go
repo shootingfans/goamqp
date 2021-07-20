@@ -1,27 +1,48 @@
 package goamqp
 
 import (
+	"context"
+	"runtime"
 	"strconv"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/shootingfans/goamqp/retry_policy"
 
 	"github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 )
 
+type warpConnection struct {
+	*connection
+}
+
 // connection 是通过一个amqp的broker节点建立的连接
 // 此连接实现了对 amqp.Connection 的一个包裹
 type connection struct {
 	*amqp.Connection
-	id           uint64             // 连接唯一ID
-	endpoint     string             // 此连接的amqp broker的节点地址
-	first        unsafe.Pointer     // 指向一个双向链表的头，采用双链表是为了方便做移除节点操作
-	idleCount    int64              // 空闲Channel数量
-	usedCount    int64              // 使用Channel数量
-	allocCount   int64              // 申请Channel数量
-	maximumCount int64              // 最大Channel数量
-	serial       uint64             // 序号，用于增加来为Channel赋值唯一ID
-	logger       logrus.FieldLogger // 日志
+	id           uint64                   // 连接唯一ID
+	endpoint     string                   // 此连接的amqp broker的节点地址
+	first        unsafe.Pointer           // 指向一个双向链表的头，采用双链表是为了方便做移除节点操作
+	idleCount    int64                    // 空闲Channel数量
+	usedCount    int64                    // 使用Channel数量
+	allocCount   int64                    // 申请Channel数量
+	maximumCount int64                    // 最大Channel数量
+	serial       uint64                   // 序号，用于增加来为Channel赋值唯一ID
+	logger       logrus.FieldLogger       // 日志
+	closed       int32                    // 是否关闭标识
+	policy       retry_policy.RetryPolicy // 重试策略
+	opt          Options
+	ctx          context.Context
+	cancel       context.CancelFunc
+}
+
+func (conn *connection) Close() error {
+	if atomic.CompareAndSwapInt32(&conn.closed, 0, Closed) {
+		conn.cancel()
+		return conn.Connection.Close()
+	}
+	return nil
 }
 
 // NoBusy 用于判断是否有通道可以获取
@@ -126,8 +147,107 @@ func (conn *connection) allocChannel() error {
 	return nil
 }
 
+func (conn *connection) reconnect() error {
+	logger := conn.logger.WithField("method", "connection.reconnect")
+	if err := conn.dialBroker(); err != nil {
+		logger.Errorf("reconnect fail: %v", err)
+		return err
+	}
+	logger.Debugln("swap connection.first to nil")
+	oldNode := atomic.SwapPointer(&conn.first, nil)
+	atomic.StoreInt64(&conn.allocCount, 0)
+	atomic.StoreInt64(&conn.usedCount, 0)
+	atomic.StoreInt64(&conn.idleCount, 0)
+	logger.Debugln("init idle channels...")
+	if err := conn.initIdleChannels(); err != nil {
+		logger.Errorf("init idle channels fail: %v", err)
+		return err
+	}
+	logger.Debugln("init idle channels success")
+	if oldNode != nil {
+		go func(node *entry) {
+			logger.Debugln("start clean oldNode")
+			for {
+				logger.Debugf("clean old node %d", node.payload.(*Channel).id)
+				node.payload.(*Channel).Close()
+				node.payload = nil
+				node.prev = nil
+				if node.next == nil {
+					return
+				}
+				next := (*entry)(node.next)
+				node.next = nil
+				node = next
+			}
+		}((*entry)(oldNode))
+	}
+	return nil
+}
+
+func (conn *connection) initIdleChannels() error {
+	// 初始化闲置通道
+	for i := 0; i < conn.opt.IdleChannelCountPerConnection; i++ {
+		if err := conn.allocChannel(); err != nil {
+			_ = conn.Close()
+			return err
+		}
+	}
+	return nil
+}
+
+func (conn *connection) keepAlive() {
+	logger := conn.logger.WithField("method", "connection.keepAlive")
+	logger.Debugln("start keep alive routine")
+	defer logger.Debugln("stop keep alive routine")
+loop:
+	for {
+		receiver := make(chan *amqp.Error)
+		conn.Connection.NotifyClose(receiver)
+		select {
+		case <-conn.ctx.Done():
+			logger.Infoln("connection context done")
+			return
+		case err := <-receiver:
+			logger.Warnf("notify close with error: %v", err)
+			var retryCount int
+			var lastErr error
+			for {
+				select {
+				case <-conn.ctx.Done():
+					logger.Infoln("connection context done")
+					return
+				default:
+					logger.Warnf("retry connect on %d times", retryCount)
+					if !conn.policy.Continue(retryCount) {
+						logger.Errorf("policy retry not continue, call final on last err: %v", lastErr)
+						conn.policy.OnFinalError(lastErr)
+						return
+					}
+					lastErr = conn.reconnect()
+					if lastErr == nil {
+						logger.Infoln("reconnect success")
+						continue loop
+					}
+					logger.Errorf("reconnect fail: %v", lastErr)
+					conn.policy.Wait(conn.ctx)
+					retryCount++
+				}
+			}
+		}
+	}
+}
+
+func (conn *connection) dialBroker() error {
+	c, err := amqp.DialConfig(conn.endpoint, conn.opt.AMQPConfig)
+	if err != nil {
+		return err
+	}
+	conn.Connection = c
+	return nil
+}
+
 // newConnection 新建一个连接
-func newConnection(id uint64, endpoint string, opt Options) (*connection, error) {
+func newConnection(id uint64, endpoint string, opt Options) (*warpConnection, error) {
 	if opt.AMQPConfig.Properties == nil {
 		opt.AMQPConfig.Properties = make(map[string]interface{})
 	}
@@ -137,28 +257,28 @@ func newConnection(id uint64, endpoint string, opt Options) (*connection, error)
 	if _, ok := opt.AMQPConfig.Properties["connection_name"]; !ok {
 		opt.AMQPConfig.Properties["connection_name"] = AmqpConnectionPrefix + strconv.FormatUint(id, 10)
 	}
-	c, err := amqp.DialConfig(endpoint, opt.AMQPConfig)
-	if err != nil {
-		return nil, err
+	if opt.IdleChannelCountPerConnection < 1 {
+		opt.IdleChannelCountPerConnection = 1
 	}
-	conn := &connection{
-		Connection:   c,
+	conn := &warpConnection{&connection{
 		id:           id,
 		endpoint:     endpoint,
 		maximumCount: int64(opt.MaximumChannelCountPerConnection),
 		logger:       opt.Logger.WithField("connection", id).WithField("endpoint", endpoint),
+		policy:       opt.RetryPolicy,
+		opt:          opt,
+	}}
+	if err := conn.connection.dialBroker(); err != nil {
+		return nil, err
 	}
-	idleCount := 1
-	if opt.IdleChannelCountPerConnection > 1 {
-		idleCount = opt.IdleChannelCountPerConnection
+	conn.connection.ctx, conn.connection.cancel = context.WithCancel(context.TODO())
+	if err := conn.connection.initIdleChannels(); err != nil {
+		return nil, err
 	}
-	// 初始化闲置通道
-	for i := 0; i < idleCount; i++ {
-		if err := conn.allocChannel(); err != nil {
-			_ = conn.Close()
-			return nil, err
-		}
-	}
-	opt.Logger.Debugf("connection %d init %d channels finish", conn.id, idleCount)
+	runtime.SetFinalizer(conn, func(cc *warpConnection) {
+		cc.connection.Close()
+	})
+	go conn.connection.keepAlive()
+	opt.Logger.Debugf("connection %d init %d channels finish", conn.connection.id, conn.connection.opt.IdleChannelCountPerConnection)
 	return conn, nil
 }
