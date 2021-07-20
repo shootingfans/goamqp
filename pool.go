@@ -35,7 +35,7 @@ type Pool interface {
 
 type pool struct {
 	opt           Options        // 选项
-	first         unsafe.Pointer // 一个双向链表的表头，其存储的是一个哥amqp的连接
+	first         unsafe.Pointer // 一个双向链表的表头，其存储的是一个amqp的连接
 	serial        uint64         // 用于自增来标识连接的ID
 	balancerIndex uint64         // 用于做endpoint的负载使用
 	closed        int32          // 标识是否关闭了连接池
