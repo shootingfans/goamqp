@@ -2,8 +2,8 @@ package declare
 
 import (
 	"github.com/shootingfans/goamqp"
-	"github.com/sirupsen/logrus"
 
+	"github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 )
 
