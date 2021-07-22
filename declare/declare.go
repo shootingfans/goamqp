@@ -2,24 +2,36 @@ package declare
 
 import (
 	"github.com/shootingfans/goamqp"
+	"github.com/sirupsen/logrus"
 
 	"github.com/streadway/amqp"
 )
 
+func DefaultArguments() Arguments {
+	return Arguments{Logger: logrus.StandardLogger()}
+}
+
 // QueueDeclare 声明队列
 func QueueDeclare(pool goamqp.Pool, name string, arguments ...Argument) error {
 	return pool.Execute(func(channel *goamqp.Channel) error {
-		var arg Arguments
+		arg := DefaultArguments()
 		for _, a := range arguments {
 			a(&arg)
 		}
+		logger := arg.Logger.WithField("method", "QueueDeclare").WithField("queue", name)
+		logger.Debugln("start declare queue ...")
 		if _, err := channel.QueueDeclare(name, arg.Durable, arg.AutoDelete, arg.Exclusive, arg.NoWait, arg.Table); err != nil {
+			logger.Errorf("declare queue fail: %v", err)
 			return err
 		}
+		logger.Debugln("declare queue success")
 		for _, exchangeName := range arg.BindExchange {
+			logger.Debugf("start bind to exchange %s", exchangeName)
 			if err := channel.QueueBind(name, arg.BindKey[name], exchangeName, arg.BindArguments[name].NoWait, arg.BindArguments[name].Table); err != nil {
+				logger.Errorf("bind to exchange %s fail: %v", exchangeName, err)
 				return err
 			}
+			logger.Debugf("bind to exchange %s success", exchangeName)
 		}
 		return nil
 	})
@@ -28,17 +40,24 @@ func QueueDeclare(pool goamqp.Pool, name string, arguments ...Argument) error {
 // ExchangeDeclare 声明交换机
 func ExchangeDeclare(pool goamqp.Pool, name string, kind string, arguments ...Argument) error {
 	return pool.Execute(func(channel *goamqp.Channel) error {
-		var arg Arguments
+		arg := DefaultArguments()
 		for _, a := range arguments {
 			a(&arg)
 		}
+		logger := arg.Logger.WithField("method", "ExchangeDeclare").WithField("exchange", name).WithField("kind", kind)
+		logger.Debugln("start declare exchange ...")
 		if err := channel.ExchangeDeclare(name, kind, arg.Durable, arg.AutoDelete, arg.Internal, arg.NoWait, arg.Table); err != nil {
+			logger.Errorf("declare exchange fail: %v", err)
 			return err
 		}
+		logger.Debugln("declare exchange success")
 		for _, exchangeName := range arg.BindExchange {
+			logger.Debugf("start bind to exchange %s", exchangeName)
 			if err := channel.ExchangeBind(name, arg.BindKey[name], exchangeName, arg.BindArguments[name].NoWait, arg.BindArguments[name].Table); err != nil {
+				logger.Errorf("bind to exchange %s fail: %v", exchangeName, err)
 				return err
 			}
+			logger.Debugf("start bind to exchange %s success", exchangeName)
 		}
 		return nil
 	})
@@ -66,9 +85,11 @@ type Arguments struct {
 	Table  amqp.Table
 
 	// bind
-	BindExchange  []string
-	BindKey       map[string]string
-	BindArguments map[string]Arguments
+	BindExchange  []string             // 存储绑定交换机
+	BindKey       map[string]string    // 每个交换机绑定的key
+	BindArguments map[string]Arguments // 每个交换机绑定的参数
+
+	Logger logrus.FieldLogger // 日志
 }
 
 // WithBindExchange 加入绑定交换机
@@ -156,5 +177,12 @@ func WithAutoAck(autoAck bool) Argument {
 func WithAutoDelete(autoDelete bool) Argument {
 	return func(arg *Arguments) {
 		arg.AutoDelete = autoDelete
+	}
+}
+
+// WithLogger 配置日志
+func WithLogger(logger logrus.FieldLogger) Argument {
+	return func(arg *Arguments) {
+		arg.Logger = logger
 	}
 }
