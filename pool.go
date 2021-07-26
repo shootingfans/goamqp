@@ -97,10 +97,10 @@ func (p *pool) GetChannel() (*Channel, error) {
 	}
 	node := (*entry)(atomic.LoadPointer(&p.first))
 	for {
-		lg := logger.WithField("connection", node.payload.(*connection).id).WithField("endpoint", node.payload.(*connection).endpoint)
+		lg := logger.WithField("connection", node.payload.(*warpConnection).id).WithField("endpoint", node.payload.(*warpConnection).endpoint)
 		lg.Debugln("test connection idle")
-		if node.payload.(*connection).NoBusy() {
-			channel, err := node.payload.(*connection).getChannel()
+		if node.payload.(*warpConnection).NoBusy() {
+			channel, err := node.payload.(*warpConnection).getChannel()
 			if err == nil {
 				lg.Debugln("get channel success")
 				return channel, nil
@@ -112,7 +112,7 @@ func (p *pool) GetChannel() (*Channel, error) {
 		next := atomic.LoadPointer(&node.next)
 		if next != nil {
 			node = (*entry)(next)
-			lg.Debugf("change to next node %d", node.payload.(*connection).id)
+			lg.Debugf("change to next node %d", node.payload.(*warpConnection).id)
 			continue
 		}
 		// 申请新连接
@@ -147,9 +147,9 @@ func (p *pool) PutChannel(channel *Channel) bool {
 	}
 	node := (*entry)(atomic.LoadPointer(&p.first))
 	for {
-		if node.payload.(*connection).id == channel.cid {
+		if node.payload.(*warpConnection).id == channel.cid {
 			logger.Debugf("put channel %d => connection %d", channel.id, channel.cid)
-			return node.payload.(*connection).putChannel(channel)
+			return node.payload.(*warpConnection).putChannel(channel)
 		}
 		next := atomic.LoadPointer(&node.next)
 		if next == nil {
@@ -175,7 +175,7 @@ func (p *pool) Close() error {
 	if atomic.CompareAndSwapInt32(&p.closed, 0, 1) {
 		node := (*entry)(p.first)
 		for {
-			_ = node.payload.(*connection).Close()
+			_ = node.payload.(*warpConnection).Close()
 			if node.next == nil {
 				break
 			}
