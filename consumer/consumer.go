@@ -2,13 +2,14 @@ package consumer
 
 import (
 	"context"
-	"github.com/streadway/amqp"
 	"os"
 	"strconv"
 	"sync/atomic"
 
 	"github.com/shootingfans/goamqp"
 	"github.com/shootingfans/goamqp/declare"
+
+	"github.com/streadway/amqp"
 )
 
 var consumeIndex uint64
