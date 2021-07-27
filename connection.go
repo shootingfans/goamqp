@@ -56,6 +56,14 @@ func (conn *connection) NoBusy() bool {
 // getChannel 从连接中获取一个通道
 func (conn *connection) getChannel() (*Channel, error) {
 	logger := conn.logger.WithField("method", "connection.getChannel")
+	if conn.first == nil {
+		logger.Debugln("conn.first nil, alloc ...")
+		// 如果头节点为空，则申请一个
+		if err := conn.allocChannel(); err != nil {
+			logger.Errorf("alloc channel fail: %v", err)
+			return nil, err
+		}
+	}
 	node := (*entry)(atomic.LoadPointer(&conn.first))
 	for {
 		logger.Debugf("try change node %d idle => used", node.payload.(*Channel).id)
@@ -89,11 +97,34 @@ func (conn *connection) getChannel() (*Channel, error) {
 
 // putChannel 将一个通道放入连接中
 func (conn *connection) putChannel(channel *Channel) bool {
-	logger := conn.logger.WithField("method", "connection.putChannel")
+	logger := conn.logger.WithField("method", "connection.putChannel").WithField("channelId", channel.id)
 	node := (*entry)(conn.first)
 	for {
 		if node.payload.(*Channel).id == channel.id {
-			logger.Debugf("channel %d state => idle", channel.id)
+			if node.payload.(*Channel).IsClosed() {
+				logger.Debugf("channel is closed, release...")
+				var prev *entry
+				if node.prev == nil {
+					// 如果当前为头节点，则把头指向其下一个节点
+					atomic.StorePointer(&conn.first, node.next)
+					logger.Debugln("conn.first pointer => node.next")
+					goto cleanNode
+				}
+				// 如果当前不是头节点，则把其前一个节点的next指向其后一个节点
+				prev = (*entry)(node.prev)
+				atomic.StorePointer(&prev.next, node.next)
+				logger.Debugf("node %d next => node %d", prev.payload.(*Channel).id, (*entry)(node.next).payload.(*Channel).id)
+				atomic.StorePointer(&(*entry)(prev.next).prev, unsafe.Pointer(prev))
+				logger.Debugf("node %d prev => node %d", (*entry)(prev.next).payload.(*Channel).id, prev.payload.(*Channel).id)
+			cleanNode:
+				node.payload = nil
+				node.next = nil
+				node.prev = nil
+				atomic.AddInt64(&conn.allocCount, -1)
+				atomic.AddInt64(&conn.usedCount, -1)
+				return true
+			}
+			logger.Debugln("channel state => idle")
 			atomic.StoreInt32(&node.payload.(*Channel).state, Idle)
 			atomic.AddInt64(&conn.usedCount, -1)
 			atomic.AddInt64(&conn.idleCount, 1)

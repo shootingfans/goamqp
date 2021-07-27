@@ -9,7 +9,7 @@ import (
 const (
 	Idle   int32 = 0 // 通道空闲
 	Used   int32 = 1 // 通道使用
-	Closed int32 = 2 // 通道关闭
+	Closed int32 = 2 // 关闭
 )
 
 // AmqpConnectionPrefix amqp连接名的前缀
