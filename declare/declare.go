@@ -19,15 +19,22 @@ func QueueDeclare(pool goamqp.Pool, name string, arguments ...Argument) error {
 			a(&arg)
 		}
 		logger := arg.Logger.WithField("method", "QueueDeclare").WithField("queue", name)
+		var err error
+		defer func() {
+			if err != nil {
+				logger.Warnf("QueueDeclare fail of Channel Error %v, close Channel", err)
+				channel.Close()
+			}
+		}()
 		logger.Debugln("start declare queue ...")
-		if _, err := channel.QueueDeclare(name, arg.Durable, arg.AutoDelete, arg.Exclusive, arg.NoWait, arg.Table); err != nil {
+		if _, err = channel.QueueDeclare(name, arg.Durable, arg.AutoDelete, arg.Exclusive, arg.NoWait, arg.Table); err != nil {
 			logger.Errorf("declare queue fail: %v", err)
 			return err
 		}
 		logger.Debugln("declare queue success")
 		for _, exchangeName := range arg.BindExchange {
 			logger.Debugf("start bind to exchange %s", exchangeName)
-			if err := channel.QueueBind(name, arg.BindKey[name], exchangeName, arg.BindArguments[name].NoWait, arg.BindArguments[name].Table); err != nil {
+			if err = channel.QueueBind(name, arg.BindKey[name], exchangeName, arg.BindArguments[name].NoWait, arg.BindArguments[name].Table); err != nil {
 				logger.Errorf("bind to exchange %s fail: %v", exchangeName, err)
 				return err
 			}
@@ -45,15 +52,22 @@ func ExchangeDeclare(pool goamqp.Pool, name string, kind string, arguments ...Ar
 			a(&arg)
 		}
 		logger := arg.Logger.WithField("method", "ExchangeDeclare").WithField("exchange", name).WithField("kind", kind)
+		var err error
+		defer func() {
+			if err != nil {
+				logger.Warnf("ExchangeDeclare fail of Channel Error %v, close Channel", err)
+				channel.Close()
+			}
+		}()
 		logger.Debugln("start declare exchange ...")
-		if err := channel.ExchangeDeclare(name, kind, arg.Durable, arg.AutoDelete, arg.Internal, arg.NoWait, arg.Table); err != nil {
+		if err = channel.ExchangeDeclare(name, kind, arg.Durable, arg.AutoDelete, arg.Internal, arg.NoWait, arg.Table); err != nil {
 			logger.Errorf("declare exchange fail: %v", err)
 			return err
 		}
 		logger.Debugln("declare exchange success")
 		for _, exchangeName := range arg.BindExchange {
 			logger.Debugf("start bind to exchange %s", exchangeName)
-			if err := channel.ExchangeBind(name, arg.BindKey[name], exchangeName, arg.BindArguments[name].NoWait, arg.BindArguments[name].Table); err != nil {
+			if err = channel.ExchangeBind(name, arg.BindKey[name], exchangeName, arg.BindArguments[name].NoWait, arg.BindArguments[name].Table); err != nil {
 				logger.Errorf("bind to exchange %s fail: %v", exchangeName, err)
 				return err
 			}
