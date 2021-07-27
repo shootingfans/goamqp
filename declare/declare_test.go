@@ -23,6 +23,10 @@ func TestDeclare(t *testing.T) {
 	defer po.Close()
 	err = ExchangeDeclare(po, "test-exchange-declare", "direct", WithAutoDelete(true))
 	assert.Nil(t, err)
+	err = ExchangeDeclare(po, "test-exchange-declare", "direct", WithAutoDelete(true), WithBindExchange("test-exchange", "#"))
+	assert.NotNil(t, err)
+	err = QueueDeclare(po, "test-queue-declare", WithAutoDelete(true), WithBindExchange("test-exchange", "#", WithDurable(false)))
+	assert.NotNil(t, err)
 	err = QueueDeclare(po, "test-queue-declare", WithAutoDelete(true), WithBindExchange("test-exchange-declare", "#", WithDurable(false)))
 	assert.Nil(t, err)
 	go func() {
@@ -41,5 +45,65 @@ func TestDeclare(t *testing.T) {
 		})
 	})
 	assert.Nil(t, err)
-	time.Sleep(time.Second * 10)
+	time.Sleep(time.Second)
+}
+
+func TestArguments(t *testing.T) {
+	arg := DefaultArguments()
+	t.Run("test WithAutoDelete", func(t *testing.T) {
+		assert.False(t, arg.AutoDelete)
+		WithAutoDelete(true)(&arg)
+		assert.True(t, arg.AutoDelete)
+	})
+	t.Run("test WithAutoAck", func(t *testing.T) {
+		assert.False(t, arg.AutoAck)
+		WithAutoAck(true)(&arg)
+		assert.True(t, arg.AutoAck)
+	})
+	t.Run("test WithNoWait", func(t *testing.T) {
+		assert.False(t, arg.NoWait)
+		WithNoWait(true)(&arg)
+		assert.True(t, arg.NoWait)
+	})
+	t.Run("test WithNoLocal", func(t *testing.T) {
+		assert.False(t, arg.NoLocal)
+		WithNoLocal(true)(&arg)
+		assert.True(t, arg.NoLocal)
+	})
+	t.Run("test WithInternal", func(t *testing.T) {
+		assert.False(t, arg.Internal)
+		WithInternal(true)(&arg)
+		assert.True(t, arg.Internal)
+	})
+	t.Run("test WithExclusive", func(t *testing.T) {
+		assert.False(t, arg.Exclusive)
+		WithExclusive(true)(&arg)
+		assert.True(t, arg.Exclusive)
+	})
+	t.Run("test WithDurable", func(t *testing.T) {
+		assert.False(t, arg.Durable)
+		WithDurable(true)(&arg)
+		assert.True(t, arg.Durable)
+	})
+	t.Run("test WithAppendTable", func(t *testing.T) {
+		assert.Nil(t, arg.Table)
+		WithAppendTable("123", 321)(&arg)
+		assert.NotNil(t, arg.Table)
+		val, ok := arg.Table["123"]
+		assert.True(t, ok)
+		assert.Equal(t, val, 321)
+	})
+	t.Run("test WithOverwriteTable", func(t *testing.T) {
+		assert.NotNil(t, arg.Table)
+		m := map[string]interface{}{
+			"456": 654,
+		}
+		WithOverwriteTable(m)(&arg)
+		assert.EqualValues(t, arg.Table, m)
+	})
+	t.Run("test WithLogger", func(t *testing.T) {
+		assert.NotNil(t, arg.Logger)
+		WithLogger(nil)(&arg)
+		assert.Nil(t, arg.Logger)
+	})
 }
