@@ -87,6 +87,19 @@ type Arguments struct {
 	NoLocal  bool
 	Internal bool
 
+	// publish arguments
+	Mandatory       bool
+	Immediate       bool
+	Priority        uint8
+	AppId           string
+	Expiration      string
+	CorrelationId   string
+	DeliveryMode    uint8
+	ContentType     string
+	ContentEncoding string
+	MessageId       string
+	ReplyTo         string
+
 	// declare queue arguments
 	Exclusive bool
 
@@ -198,5 +211,82 @@ func WithAutoDelete(autoDelete bool) Argument {
 func WithLogger(logger logrus.FieldLogger) Argument {
 	return func(arg *Arguments) {
 		arg.Logger = logger
+	}
+}
+
+// WithImmediate 配置发布参数 immediate
+func WithImmediate(immediate bool) Argument {
+	return func(arg *Arguments) {
+		arg.Immediate = immediate
+	}
+}
+
+// WithMandatory 配置发布参数 mandatory
+func WithMandatory(mandatory bool) Argument {
+	return func(arg *Arguments) {
+		arg.Mandatory = mandatory
+	}
+}
+
+// WithPriority 配置发布参数 Priority
+func WithPriority(Priority uint8) Argument {
+	return func(arg *Arguments) {
+		arg.Priority = Priority
+	}
+}
+
+// WithAppId 配置发布参数 AppId
+func WithAppId(AppId string) Argument {
+	return func(arg *Arguments) {
+		arg.AppId = AppId
+	}
+}
+
+// WithExpiration 配置发布参数 Expiration
+func WithExpiration(Expiration string) Argument {
+	return func(arg *Arguments) {
+		arg.Expiration = Expiration
+	}
+}
+
+// WithCorrelationId 配置发布参数 CorrelationId
+func WithCorrelationId(CorrelationId string) Argument {
+	return func(arg *Arguments) {
+		arg.CorrelationId = CorrelationId
+	}
+}
+
+// WithDeliveryMode 配置发布参数 DeliveryMode
+func WithDeliveryMode(DeliveryMode uint8) Argument {
+	return func(arg *Arguments) {
+		arg.DeliveryMode = DeliveryMode
+	}
+}
+
+// WithContentType 配置发布参数 ContentType
+func WithContentType(ContentType string) Argument {
+	return func(arg *Arguments) {
+		arg.ContentType = ContentType
+	}
+}
+
+// WithContentEncoding 配置发布参数 ContentEncoding
+func WithContentEncoding(ContentEncoding string) Argument {
+	return func(arg *Arguments) {
+		arg.ContentEncoding = ContentEncoding
+	}
+}
+
+// WithMessageId 配置发布参数 MessageId
+func WithMessageId(MessageId string) Argument {
+	return func(arg *Arguments) {
+		arg.MessageId = MessageId
+	}
+}
+
+// WithReplyTo 配置发布参数 ReplyTo
+func WithReplyTo(ReplyTo string) Argument {
+	return func(arg *Arguments) {
+		arg.ReplyTo = ReplyTo
 	}
 }
