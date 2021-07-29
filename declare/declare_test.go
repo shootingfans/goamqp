@@ -50,60 +50,92 @@ func TestDeclare(t *testing.T) {
 
 func TestArguments(t *testing.T) {
 	arg := DefaultArguments()
-	t.Run("test WithAutoDelete", func(t *testing.T) {
-		assert.False(t, arg.AutoDelete)
-		WithAutoDelete(true)(&arg)
-		assert.True(t, arg.AutoDelete)
-	})
-	t.Run("test WithAutoAck", func(t *testing.T) {
-		assert.False(t, arg.AutoAck)
-		WithAutoAck(true)(&arg)
-		assert.True(t, arg.AutoAck)
-	})
-	t.Run("test WithNoWait", func(t *testing.T) {
-		assert.False(t, arg.NoWait)
-		WithNoWait(true)(&arg)
-		assert.True(t, arg.NoWait)
-	})
-	t.Run("test WithNoLocal", func(t *testing.T) {
-		assert.False(t, arg.NoLocal)
-		WithNoLocal(true)(&arg)
-		assert.True(t, arg.NoLocal)
-	})
-	t.Run("test WithInternal", func(t *testing.T) {
-		assert.False(t, arg.Internal)
-		WithInternal(true)(&arg)
-		assert.True(t, arg.Internal)
-	})
-	t.Run("test WithExclusive", func(t *testing.T) {
-		assert.False(t, arg.Exclusive)
-		WithExclusive(true)(&arg)
-		assert.True(t, arg.Exclusive)
-	})
-	t.Run("test WithDurable", func(t *testing.T) {
-		assert.False(t, arg.Durable)
-		WithDurable(true)(&arg)
-		assert.True(t, arg.Durable)
-	})
-	t.Run("test WithAppendTable", func(t *testing.T) {
-		assert.Nil(t, arg.Table)
-		WithAppendTable("123", 321)(&arg)
-		assert.NotNil(t, arg.Table)
-		val, ok := arg.Table["123"]
-		assert.True(t, ok)
-		assert.Equal(t, val, 321)
-	})
-	t.Run("test WithOverwriteTable", func(t *testing.T) {
-		assert.NotNil(t, arg.Table)
-		m := map[string]interface{}{
-			"456": 654,
+	t.Run("test bool fields", func(t *testing.T) {
+		boolCases := []struct {
+			name    string
+			fn      func(*Arguments)
+			pointer *bool
+		}{
+			{"test WithAutoDelete", WithAutoDelete(true), &arg.AutoDelete},
+			{"test WithAutoAck", WithAutoAck(true), &arg.AutoAck},
+			{"test WithNoWait", WithNoWait(true), &arg.NoWait},
+			{"test WithNoLocal", WithNoLocal(true), &arg.NoLocal},
+			{"test WithInternal", WithInternal(true), &arg.Internal},
+			{"test WithExclusive", WithExclusive(true), &arg.Exclusive},
+			{"test WithDurable", WithDurable(true), &arg.Durable},
+			{"test WithMandatory", WithMandatory(true), &arg.Mandatory},
+			{"test WithImmediate", WithImmediate(true), &arg.Immediate},
 		}
-		WithOverwriteTable(m)(&arg)
-		assert.EqualValues(t, arg.Table, m)
+		for _, boolcase := range boolCases {
+			t.Run(boolcase.name, func(t *testing.T) {
+				assert.False(t, *boolcase.pointer)
+				boolcase.fn(&arg)
+				assert.True(t, *boolcase.pointer)
+			})
+		}
+	})
+	t.Run("test table fields", func(t *testing.T) {
+		t.Run("test WithAppendTable", func(t *testing.T) {
+			assert.Nil(t, arg.Table)
+			WithAppendTable("123", 321)(&arg)
+			assert.NotNil(t, arg.Table)
+			val, ok := arg.Table["123"]
+			assert.True(t, ok)
+			assert.Equal(t, val, 321)
+		})
+		t.Run("test WithOverwriteTable", func(t *testing.T) {
+			assert.NotNil(t, arg.Table)
+			m := map[string]interface{}{
+				"456": 654,
+			}
+			WithOverwriteTable(m)(&arg)
+			assert.EqualValues(t, arg.Table, m)
+		})
 	})
 	t.Run("test WithLogger", func(t *testing.T) {
 		assert.NotNil(t, arg.Logger)
 		WithLogger(nil)(&arg)
 		assert.Nil(t, arg.Logger)
+	})
+	t.Run("test string fields", func(t *testing.T) {
+		stringCases := []struct {
+			name    string
+			want    string
+			fn      func(string) Argument
+			pointer *string
+		}{
+			{"AppId", "123", WithAppId, &arg.AppId},
+			{"Expiration", "234", WithExpiration, &arg.Expiration},
+			{"CorrelationId", "345", WithCorrelationId, &arg.CorrelationId},
+			{"ContentType", "456", WithContentType, &arg.ContentType},
+			{"ContentEncoding", "567", WithContentEncoding, &arg.ContentEncoding},
+			{"MessageId", "789", WithMessageId, &arg.MessageId},
+			{"ReplyTo", "890", WithReplyTo, &arg.ReplyTo},
+		}
+		for _, stringCase := range stringCases {
+			t.Run(stringCase.name, func(t *testing.T) {
+				assert.Empty(t, *stringCase.pointer)
+				stringCase.fn(stringCase.want)(&arg)
+				assert.Equal(t, *stringCase.pointer, stringCase.want)
+			})
+		}
+	})
+	t.Run("test uint8 fields", func(t *testing.T) {
+		uint8Cases := []struct {
+			name    string
+			want    uint8
+			fn      func(uint8) Argument
+			pointer *uint8
+		}{
+			{"test WithDeliveryMode", amqp.Persistent, WithDeliveryMode, &arg.DeliveryMode},
+			{"test WithPriority", 5, WithPriority, &arg.Priority},
+		}
+		for _, uint8Case := range uint8Cases {
+			t.Run(uint8Case.name, func(t *testing.T) {
+				assert.Zero(t, *uint8Case.pointer)
+				uint8Case.fn(uint8Case.want)(&arg)
+				assert.Equal(t, *uint8Case.pointer, uint8Case.want)
+			})
+		}
 	})
 }
