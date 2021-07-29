@@ -19,7 +19,10 @@ func (c *Channel) Close() error {
 	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
 		return nil
 	}
-	return c.Channel.Close()
+	if c.Channel != nil {
+		return c.Channel.Close()
+	}
+	return nil
 }
 
 // IsClosed 是否关闭了

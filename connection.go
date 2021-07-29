@@ -98,6 +98,11 @@ func (conn *connection) getChannel() (*Channel, error) {
 // putChannel 将一个通道放入连接中
 func (conn *connection) putChannel(channel *Channel) bool {
 	logger := conn.logger.WithField("method", "connection.putChannel").WithField("channelId", channel.id)
+	if conn.first == nil {
+		// 头节点为空，则不放入
+		channel.Close()
+		return false
+	}
 	node := (*entry)(conn.first)
 	for {
 		if node.payload.(*Channel).id == channel.id {
@@ -113,9 +118,11 @@ func (conn *connection) putChannel(channel *Channel) bool {
 				// 如果当前不是头节点，则把其前一个节点的next指向其后一个节点
 				prev = (*entry)(node.prev)
 				atomic.StorePointer(&prev.next, node.next)
-				logger.Debugf("node %d next => node %d", prev.payload.(*Channel).id, (*entry)(node.next).payload.(*Channel).id)
-				atomic.StorePointer(&(*entry)(prev.next).prev, unsafe.Pointer(prev))
-				logger.Debugf("node %d prev => node %d", (*entry)(prev.next).payload.(*Channel).id, prev.payload.(*Channel).id)
+				logger.Debugf("node %d next => node next", prev.payload.(*Channel).id)
+				if node.next != nil {
+					atomic.StorePointer(&(*entry)(prev.next).prev, unsafe.Pointer(prev))
+					logger.Debugf("node %d prev => node %d", (*entry)(prev.next).payload.(*Channel).id, prev.payload.(*Channel).id)
+				}
 			cleanNode:
 				node.payload = nil
 				node.next = nil

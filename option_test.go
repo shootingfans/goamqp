@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shootingfans/goamqp/retry_policy"
+
 	"github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
@@ -30,6 +32,7 @@ func TestOptions_Validate(t *testing.T) {
 	opt.IdleChannelCountPerConnection = 1
 	opt.ChannelAliveDuration = time.Second
 	opt.ConnectionAliveDuration = time.Second
+	opt.RetryPolicy = retry_policy.NewDefaultPolicy(3, time.Second*1, defaultRetryFailure)
 	opt.MaximumConnectionCount = -1
 	t.Run("test maximum connection count", func(t *testing.T) {
 		err := opt.Validate()

@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -59,49 +58,26 @@ func TestConnectionGetChannel(t *testing.T) {
 }
 
 func TestConnectionPutChannel(t *testing.T) {
-	conn, err := newTestConnection(t, WithIdleChannelCountPerConnection(1), WithMaximumChannelCountPerConnection(5))
+	conn, err := newTestConnection(t, WithIdleChannelCountPerConnection(1), WithMaximumChannelCountPerConnection(2))
 	assert.Nil(t, err)
 	defer conn.Close()
-	var wg sync.WaitGroup
-	routineCount := 10
-	routineLoopCount := 5
-	var getCount int32
-	reportChan := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(time.Second)
-		for range ticker.C {
-			select {
-			case <-reportChan:
-				ticker.Stop()
-				return
-			default:
-				t.Logf("now count %d", atomic.LoadInt32(&getCount))
-				assert.LessOrEqual(t, atomic.LoadInt32(&getCount), int32(5))
-			}
-		}
-	}()
-	for i := 0; i < routineCount; i++ {
-		wg.Add(1)
-		go func(index int) {
-			defer wg.Done()
-			for j := 0; j < routineLoopCount; j++ {
-				channel, err := conn.getChannel()
-				if atomic.LoadInt32(&getCount) < 5 {
-					assert.Nil(t, err)
-					atomic.AddInt32(&getCount, 1)
-					t.Logf("%d get channel", index)
-					time.Sleep(time.Millisecond * 500)
-					conn.putChannel(channel)
-					atomic.AddInt32(&getCount, -1)
-					t.Logf("%d put channel", index)
-				} else {
-					t.Logf("%d get channel fail: %v", index, err)
-					time.Sleep(time.Millisecond * 100)
-				}
-			}
-		}(i)
-	}
-	wg.Wait()
+	c1, err := conn.getChannel()
+	assert.Nil(t, err)
+	c2, err := conn.getChannel()
+	assert.Nil(t, err)
+	_, err = conn.getChannel()
+	assert.ErrorIs(t, err, ErrChannelMaximum)
+	assert.True(t, conn.putChannel(c1))
+	c3, err := conn.getChannel()
+	assert.Nil(t, err)
+	c3.Close()
+	assert.True(t, conn.putChannel(c3))
+	c2.Close()
+	assert.True(t, conn.putChannel(c2))
+	c4, err := conn.getChannel()
+	assert.Nil(t, err)
+	assert.False(t, conn.putChannel(new(Channel)))
+	conn.putChannel(c4)
 }
 
 func TestConnectionKeepAlive(t *testing.T) {
@@ -115,9 +91,9 @@ func TestConnectionKeepAlive(t *testing.T) {
 	assert.Nil(t, err)
 	c, err := conn.getChannel()
 	assert.Nil(t, err)
-	time.Sleep(time.Minute * 2)
+	//time.Sleep(time.Minute * 2)
 	conn.putChannel(c)
 	conn = nil
 	runtime.GC()
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 1)
 }
