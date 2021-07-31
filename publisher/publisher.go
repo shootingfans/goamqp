@@ -1,11 +1,13 @@
 package publisher
 
 import (
-	"github.com/shootingfans/goamqp"
-	"github.com/shootingfans/goamqp/declare"
-	"github.com/streadway/amqp"
 	"strconv"
 	"time"
+
+	"github.com/shootingfans/goamqp"
+	"github.com/shootingfans/goamqp/declare"
+
+	"github.com/streadway/amqp"
 )
 
 func Publish(pool goamqp.Pool, exchange, routerKey string, payload []byte, args ...declare.Argument) error {

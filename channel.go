@@ -1,8 +1,9 @@
 package goamqp
 
 import (
-	"github.com/streadway/amqp"
 	"sync/atomic"
+
+	"github.com/streadway/amqp"
 )
 
 // Channel 定义通道
