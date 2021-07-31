@@ -2,6 +2,8 @@ package declare
 
 import (
 	"github.com/shootingfans/goamqp"
+	"strconv"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
@@ -249,6 +251,13 @@ func WithExpiration(Expiration string) Argument {
 	}
 }
 
+// WithExpirationTime 配置发布消息过期时间
+func WithExpirationTime(duration time.Duration) Argument {
+	return func(arg *Arguments) {
+		arg.Expiration = strconv.FormatInt(duration.Milliseconds(), 10)
+	}
+}
+
 // WithCorrelationId 配置发布参数 CorrelationId
 func WithCorrelationId(CorrelationId string) Argument {
 	return func(arg *Arguments) {
@@ -288,5 +297,27 @@ func WithMessageId(MessageId string) Argument {
 func WithReplyTo(ReplyTo string) Argument {
 	return func(arg *Arguments) {
 		arg.ReplyTo = ReplyTo
+	}
+}
+
+// WithDeathLetterQueue 配置死信队列
+func WithDeathLetterQueue(deathExchange string, deathRouterKey string) Argument {
+	return func(arg *Arguments) {
+		if len(deathExchange) > 0 {
+			WithAppendTable("x-dead-letter-exchange", deathExchange)(arg)
+		}
+		if len(deathRouterKey) > 0 {
+			WithAppendTable("x-dead-letter-routing-key", deathRouterKey)(arg)
+		}
+	}
+}
+
+// WithDelayQueue 配置延迟队列
+func WithDelayQueue(delayExchange string, ttl time.Duration) Argument {
+	return func(arg *Arguments) {
+		WithDeathLetterQueue(delayExchange, "")(arg)
+		if ttl > 0 {
+			WithAppendTable("x-message-ttl", strconv.FormatInt(ttl.Milliseconds(), 10))(arg)
+		}
 	}
 }

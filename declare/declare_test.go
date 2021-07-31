@@ -2,6 +2,7 @@ package declare
 
 import (
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
@@ -91,6 +92,31 @@ func TestArguments(t *testing.T) {
 			WithOverwriteTable(m)(&arg)
 			assert.EqualValues(t, arg.Table, m)
 		})
+		tableIsSet := func(tab amqp.Table, key string, value interface{}) bool {
+			if tab == nil {
+				return false
+			}
+			vv, ok := tab[key]
+			if !ok {
+				return false
+			}
+			return reflect.DeepEqual(value, vv)
+		}
+		t.Run("test death letter", func(t *testing.T) {
+			assert.False(t, tableIsSet(arg.Table, "x-dead-letter-exchange", "123"))
+			WithDeathLetterQueue("123", "")(&arg)
+			assert.True(t, tableIsSet(arg.Table, "x-dead-letter-exchange", "123"))
+			assert.False(t, tableIsSet(arg.Table, "x-dead-letter-routing-key", "345"))
+			WithDeathLetterQueue("", "345")(&arg)
+			assert.True(t, tableIsSet(arg.Table, "x-dead-letter-routing-key", "345"))
+		})
+		t.Run("test delay queue", func(t *testing.T) {
+			assert.False(t, tableIsSet(arg.Table, "x-dead-letter-exchange", "444"))
+			assert.False(t, tableIsSet(arg.Table, "x-message-ttl", "10000"))
+			WithDelayQueue("444", time.Second*10)(&arg)
+			assert.True(t, tableIsSet(arg.Table, "x-dead-letter-exchange", "444"))
+			assert.True(t, tableIsSet(arg.Table, "x-message-ttl", "10000"))
+		})
 	})
 	t.Run("test WithLogger", func(t *testing.T) {
 		assert.NotNil(t, arg.Logger)
@@ -137,5 +163,13 @@ func TestArguments(t *testing.T) {
 				assert.Equal(t, *uint8Case.pointer, uint8Case.want)
 			})
 		}
+	})
+	t.Run("test with WithExpirationTime", func(t *testing.T) {
+		arg1 := DefaultArguments()
+		arg2 := DefaultArguments()
+		WithExpiration("15000")(&arg1)
+		assert.NotEqual(t, arg1.Expiration, arg2.Expiration)
+		WithExpirationTime(time.Second * 15)(&arg2)
+		assert.Equal(t, arg1.Expiration, arg2.Expiration)
 	})
 }
