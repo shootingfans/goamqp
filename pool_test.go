@@ -17,12 +17,12 @@ func newTestEndpointsPool() (Pool, error) {
 	//logger.SetLevel(logrus.DebugLevel)
 	return NewPool(
 		WithEndpoints(strings.Split(endpoints, ",")...),
-		WithMaximumChannelCountPerConnection(5),
+		WithMaximumChannelCountPerConnection(1),
 		WithMaximumConnectionCount(5),
 		//WithIdleChannelCountPerConnection(5),
 		//WithIdleConnectionCount(5),
 		WithLogger(logger),
-		//WithBlocking(true),
+		WithBlocking(true),
 	)
 }
 
@@ -40,10 +40,10 @@ func TestPoolGet(t *testing.T) {
 				channel, err := po.GetChannel()
 				assert.Nil(t, err)
 				//rand.Seed(time.Now().UnixNano())
-				//time.Sleep(time.Millisecond * 500)
-				//po.PutChannel(channel)
+				time.Sleep(time.Millisecond * 700)
+				po.PutChannel(channel)
 				t.Logf("routine %d get channel %d - %d in loop %d", index, channel.cid, channel.id, j)
-				_ = channel
+				//_ = channel
 				//time.Sleep(time.Millisecond * time.Duration(rand.Intn(400)+100))
 			}
 		}(i)
