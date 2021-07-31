@@ -22,7 +22,7 @@ func newTestEndpointsPool() (Pool, error) {
 		//WithIdleChannelCountPerConnection(5),
 		//WithIdleConnectionCount(5),
 		WithLogger(logger),
-		WithBlocking(true),
+		//WithBlocking(true),
 	)
 }
 
