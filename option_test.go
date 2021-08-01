@@ -73,6 +73,14 @@ func TestOptions_Validate(t *testing.T) {
 		assert.Contains(t, err.Error(), "channel alive duration")
 	})
 	opt.ChannelAliveDuration = time.Second
+	opt.ScanConnectionIdleDuration = -1
+	t.Run("test scan connection idle duration", func(t *testing.T) {
+		err := opt.Validate()
+		assert.NotNil(t, err)
+		assert.ErrorIs(t, err, ErrIllegalOptions)
+		assert.Contains(t, err.Error(), "scan connection idle interval duration")
+	})
+	opt.ScanConnectionIdleDuration = time.Second
 	opt.ConnectionAliveDuration = -1
 	t.Run("test maximum channel per connection count", func(t *testing.T) {
 		err := opt.Validate()

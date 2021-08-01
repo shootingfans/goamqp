@@ -15,6 +15,7 @@ const (
 	DefaultChannelAliveDuration    = time.Minute * 5  // 默认通道存活时间
 	DefaultRetryMaximumAttempts    = 3                // 断开连接后重试次数
 	DefaultRetryInterval           = time.Second * 10 // 断开连接后重试间隔
+	DefaultScanIdleDuration        = time.Minute      // 默认扫描回收间隔
 )
 
 func defaultRetryFailure(err error) {
@@ -35,6 +36,7 @@ type Options struct {
 	Logger                           logrus.FieldLogger       // 可传入实现此接口的日志
 	Blocking                         bool                     // 是否阻塞模式，非阻塞模式将在获取通道时等候
 	RetryPolicy                      retry_policy.RetryPolicy // 重试策略
+	ScanConnectionIdleDuration       time.Duration            // 扫描连接空闲间隔
 }
 
 // Validate 用于校验参数是否有效
@@ -50,12 +52,13 @@ func (o Options) Validate() error {
 		return NewIllegalOptionsError("retry policy must set")
 	}
 	for key, val := range map[string]int{
-		"maximum connection count":             o.MaximumConnectionCount,
-		"maximum channel count per connection": o.MaximumChannelCountPerConnection,
-		"idle connection count":                o.IdleConnectionCount,
-		"idle channel count per connection":    o.IdleChannelCountPerConnection,
-		"connection alive duration":            int(o.ConnectionAliveDuration),
-		"channel alive duration":               int(o.ChannelAliveDuration),
+		"maximum connection count":               o.MaximumConnectionCount,
+		"maximum channel count per connection":   o.MaximumChannelCountPerConnection,
+		"idle connection count":                  o.IdleConnectionCount,
+		"idle channel count per connection":      o.IdleChannelCountPerConnection,
+		"connection alive duration":              int(o.ConnectionAliveDuration),
+		"channel alive duration":                 int(o.ChannelAliveDuration),
+		"scan connection idle interval duration": int(o.ScanConnectionIdleDuration),
 	} {
 		if val < 0 {
 			return NewIllegalOptionsError(key + " should greater or equal than 0")
@@ -67,11 +70,12 @@ func (o Options) Validate() error {
 // newDefaultOptions 新建一个默认的配置
 func newDefaultOptions() Options {
 	return Options{
-		ConnectTimeout:          DefaultConnectionTimeout,
-		ConnectionAliveDuration: DefaultConnectionAliveDuration,
-		ChannelAliveDuration:    DefaultChannelAliveDuration,
-		Logger:                  logrus.StandardLogger(),
-		RetryPolicy:             retry_policy.NewDefaultPolicy(DefaultRetryMaximumAttempts, DefaultRetryInterval, defaultRetryFailure),
+		ConnectTimeout:             DefaultConnectionTimeout,
+		ConnectionAliveDuration:    DefaultConnectionAliveDuration,
+		ChannelAliveDuration:       DefaultChannelAliveDuration,
+		Logger:                     logrus.StandardLogger(),
+		RetryPolicy:                retry_policy.NewDefaultPolicy(DefaultRetryMaximumAttempts, DefaultRetryInterval, defaultRetryFailure),
+		ScanConnectionIdleDuration: DefaultScanIdleDuration,
 	}
 }
 
@@ -159,5 +163,12 @@ func WithBlocking(blocking bool) Option {
 func WithRetryPolicy(policy retry_policy.RetryPolicy) Option {
 	return func(options *Options) {
 		options.RetryPolicy = policy
+	}
+}
+
+// WithScanConnectionIdleDuration 扫描连接空闲间隔
+func WithScanConnectionIdleDuration(duration time.Duration) Option {
+	return func(options *Options) {
+		options.ScanConnectionIdleDuration = duration
 	}
 }
