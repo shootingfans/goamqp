@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/shootingfans/goamqp/retry_policy"
@@ -32,9 +33,10 @@ type connection struct {
 	logger       logrus.FieldLogger       // 日志
 	closed       int32                    // 是否关闭标识
 	policy       retry_policy.RetryPolicy // 重试策略
-	opt          Options
-	ctx          context.Context
-	cancel       context.CancelFunc
+	opt          Options                  // 配置选项
+	ctx          context.Context          // 上下文，用于控制后台keepAlive协程
+	cancel       context.CancelFunc       // 用于取消keepAlive协程
+	lastUsed     int64                    // 上次使用的时间戳
 }
 
 func (conn *connection) Close() error {
@@ -53,6 +55,16 @@ func (conn *connection) NoBusy() bool {
 		(atomic.LoadInt64(&conn.allocCount) < conn.maximumCount)
 }
 
+// LastUsed 上次使用时间
+func (conn *connection) LastUsed() time.Time {
+	return time.Unix(atomic.LoadInt64(&conn.lastUsed), 0)
+}
+
+// AllowClear 允许清理
+func (conn *connection) AllowClear() bool {
+	return atomic.LoadInt64(&conn.usedCount) == 0
+}
+
 // getChannel 从连接中获取一个通道
 func (conn *connection) getChannel() (*Channel, error) {
 	logger := conn.logger.WithField("method", "connection.getChannel")
@@ -68,10 +80,11 @@ func (conn *connection) getChannel() (*Channel, error) {
 	for {
 		logger.Debugf("try change node %d idle => used", node.payload.(*Channel).id)
 		if atomic.CompareAndSwapInt32(&node.payload.(*Channel).state, Idle, Used) {
+			// 如果当前通道是空闲状态，则标记为使用中并返回
 			logger.Debugf("%d idle => used success", node.payload.(*Channel).id)
 			atomic.AddInt64(&conn.usedCount, 1)
 			atomic.AddInt64(&conn.idleCount, -1)
-			// 如果当前通道是空闲状态，则标记为使用中并返回
+			atomic.StoreInt64(&conn.lastUsed, time.Now().Unix())
 			return node.payload.(*Channel), nil
 		}
 		logger.Debugf("%d idle => used fail", node.payload.(*Channel).id)
@@ -98,6 +111,7 @@ func (conn *connection) getChannel() (*Channel, error) {
 // putChannel 将一个通道放入连接中
 func (conn *connection) putChannel(channel *Channel) bool {
 	logger := conn.logger.WithField("method", "connection.putChannel").WithField("channelId", channel.id)
+	defer atomic.StoreInt64(&conn.lastUsed, time.Now().Unix())
 	if conn.first == nil {
 		// 头节点为空，则不放入
 		channel.Close()
@@ -305,6 +319,7 @@ func newConnection(id uint64, endpoint string, opt Options) (*warpConnection, er
 		logger:       opt.Logger.WithField("connection", id).WithField("endpoint", endpoint),
 		policy:       opt.RetryPolicy,
 		opt:          opt,
+		lastUsed:     time.Now().Unix(),
 	}}
 	if err := conn.connection.dialBroker(); err != nil {
 		return nil, err

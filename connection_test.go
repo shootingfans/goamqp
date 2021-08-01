@@ -89,10 +89,13 @@ func TestConnectionKeepAlive(t *testing.T) {
 		WithLogger(logger),
 	)
 	assert.Nil(t, err)
+	assert.True(t, conn.AllowClear())
 	c, err := conn.getChannel()
 	assert.Nil(t, err)
+	assert.False(t, conn.AllowClear())
 	//time.Sleep(time.Minute * 2)
 	conn.putChannel(c)
+	assert.True(t, conn.AllowClear())
 	conn = nil
 	runtime.GC()
 	time.Sleep(time.Second * 1)
