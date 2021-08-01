@@ -2,6 +2,7 @@ package goamqp
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -11,23 +12,19 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func newTestEndpointsPool() (Pool, error) {
+func newTestEndpointsPool(opts ...Option) (Pool, error) {
 	endpoints := os.Getenv("AMQP_ENDPOINTS")
 	logger := logrus.New()
-	//logger.SetLevel(logrus.DebugLevel)
-	return NewPool(
+	logger.SetLevel(logrus.DebugLevel)
+	opts = append([]Option{
 		WithEndpoints(strings.Split(endpoints, ",")...),
-		WithMaximumChannelCountPerConnection(1),
-		WithMaximumConnectionCount(5),
-		//WithIdleChannelCountPerConnection(5),
-		//WithIdleConnectionCount(5),
 		WithLogger(logger),
-		WithBlocking(true),
-	)
+	}, opts...)
+	return NewPool(opts...)
 }
 
 func TestPoolGet(t *testing.T) {
-	po, err := newTestEndpointsPool()
+	po, err := newTestEndpointsPool(WithMaximumChannelCountPerConnection(1), WithMaximumConnectionCount(5), WithBlocking(true))
 	assert.Nil(t, err)
 	defer po.Close()
 	routineNum, loopNum := 5, 5
@@ -54,7 +51,7 @@ func TestPoolGet(t *testing.T) {
 }
 
 func TestPool_Execute(t *testing.T) {
-	po, err := newTestEndpointsPool()
+	po, err := newTestEndpointsPool(WithMaximumChannelCountPerConnection(1), WithMaximumConnectionCount(5), WithBlocking(true))
 	assert.Nil(t, err)
 	defer po.Close()
 	routineNum, loopNum := 5, 5
@@ -74,4 +71,41 @@ func TestPool_Execute(t *testing.T) {
 	}
 	wg.Wait()
 	t.Log(po.Size())
+	po = nil
+	runtime.GC()
+	time.Sleep(time.Millisecond * 100)
+}
+
+func TestPool_ClearIdle(t *testing.T) {
+	po, err := newTestEndpointsPool(
+		WithIdleChannelCountPerConnection(1),
+		WithMaximumChannelCountPerConnection(1),
+		WithConnectionAliveDuration(time.Second*3),
+		WithScanConnectionIdleDuration(time.Second*2),
+		WithIdleConnectionCount(2),
+		WithMaximumConnectionCount(5),
+		WithBlocking(true),
+	)
+	assert.Nil(t, err)
+	defer po.Close()
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			assert.Nil(t, po.Execute(func(channel *Channel) error {
+				if idx == 3 {
+					time.Sleep(time.Second * 5)
+				} else {
+					time.Sleep(time.Second * 2)
+				}
+				return nil
+			}))
+		}(i)
+	}
+	time.Sleep(time.Second)
+	assert.Equal(t, po.Size(), 5)
+	wg.Wait()
+	time.Sleep(time.Second * 10)
+	assert.Equal(t, po.Size(), 2)
 }

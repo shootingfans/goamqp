@@ -2,8 +2,10 @@ package goamqp
 
 import (
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 )
 
@@ -33,6 +35,10 @@ type Pool interface {
 	Size() int
 }
 
+type warpPool struct {
+	*pool
+}
+
 type pool struct {
 	opt           Options        // 选项
 	first         unsafe.Pointer // 一个双向链表的表头，其存储的是一个amqp的连接
@@ -41,6 +47,7 @@ type pool struct {
 	closed        int32          // 标识是否关闭了连接池
 	allocCount    int64          // 申请数量
 	cond          *sync.Cond
+	close         chan struct{}
 }
 
 func (p *pool) Cap() int {
@@ -173,6 +180,7 @@ func (p *pool) Execute(fn func(channel *Channel) error) error {
 
 func (p *pool) Close() error {
 	if atomic.CompareAndSwapInt32(&p.closed, 0, 1) {
+		close(p.close)
 		node := (*entry)(p.first)
 		for {
 			_ = node.payload.(*warpConnection).Close()
@@ -185,6 +193,77 @@ func (p *pool) Close() error {
 	return nil
 }
 
+func (p *pool) cleanIdle() {
+	logger := p.opt.Logger.WithField("method", "pool.cleanIdle")
+	logger.Debugln("routine start...")
+	defer logger.Debugln("routine exit")
+	ticker := time.NewTicker(p.opt.ScanConnectionIdleDuration)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-p.close:
+			return
+		case <-ticker.C:
+			logger.Debugln("times up, scan idle connections...")
+			if p.opt.ConnectionAliveDuration == 0 {
+				// 未配置连接存活时间，跳过
+				continue
+			}
+			// todo 扫描空闲连接
+			idleCount := 1
+			if p.opt.IdleConnectionCount > idleCount {
+				idleCount = p.opt.IdleConnectionCount
+			}
+			node := atomic.LoadPointer(&p.first)
+			index := 0
+			var prev *entry
+			for {
+				if node == nil {
+					// 没有节点退出循环
+					logger.Debugln("node is nil, stop loop")
+					break
+				}
+				lg := logger.WithField("nodeId", (*entry)(node).payload.(*warpConnection).id)
+				if index = index + 1; index <= idleCount {
+					// 没有超过配置的空闲连接，不处理
+					lg.Debugf("node count %d <= idle count %d, next loop", index, idleCount)
+					goto next
+				}
+				if cleanTime := (*entry)(node).payload.(*warpConnection).LastUsed().Add(p.opt.ConnectionAliveDuration); cleanTime.After(time.Now()) {
+					// 如果当前节点未到达清理时间，不处理
+					lg.Debugf("node clean time is %s after now, next loop", cleanTime)
+					goto next
+				}
+				if !(*entry)(node).payload.(*warpConnection).AllowClear() {
+					// 如果当前节点不允许清理，则不处理
+					lg.Debugln("node not allow clear, next loop")
+					goto next
+				}
+				prev = (*entry)((*entry)(node).prev)
+				// 将本节点的前一个节点的next指向本节点的下一个节点
+				atomic.StorePointer(&prev.next, (*entry)(node).next)
+				lg.Debugf("prev %d node.next => node.next", prev.payload.(*warpConnection).id)
+				if prev.next != nil {
+					// 如果本节点的下一个节点不为空，则将其prev节点指向本节点前一个节点
+					lg.Debugf("next %d node.prev => node.prev %d", (*entry)(prev.next).payload.(*warpConnection).id, prev.payload.(*warpConnection).id)
+					atomic.StorePointer(&(*entry)(prev.next).prev, unsafe.Pointer(prev))
+				}
+				lg.Debugln("node close")
+				_ = (*entry)(node).payload.(*warpConnection).Close()
+				(*entry)(node).payload = nil
+				(*entry)(node).next = nil
+				(*entry)(node).prev = nil
+				atomic.AddInt64(&p.allocCount, -1)
+				node = atomic.LoadPointer(&prev.next)
+				continue
+			next:
+				node = atomic.LoadPointer(&((*entry)(node).next))
+			}
+			logger.Debugln("scan finish")
+		}
+	}
+}
+
 // NewPoolByOptions 通过选项建立连接池
 func NewPoolByOptions(opt Options) (Pool, error) {
 	if err := opt.Validate(); err != nil {
@@ -194,7 +273,7 @@ func NewPoolByOptions(opt Options) (Pool, error) {
 	if opt.IdleConnectionCount > 1 {
 		idleConnectionCount = opt.IdleConnectionCount
 	}
-	po := &pool{opt: opt}
+	po := &warpPool{&pool{opt: opt, close: make(chan struct{})}}
 	if po.opt.Blocking {
 		po.cond = sync.NewCond(&sync.RWMutex{})
 	}
@@ -204,6 +283,10 @@ func NewPoolByOptions(opt Options) (Pool, error) {
 		}
 	}
 	opt.Logger.Debugf("init pool %d connections finish", idleConnectionCount)
+	go po.cleanIdle()
+	runtime.SetFinalizer(po, func(p *warpPool) {
+		_ = p.pool.Close()
+	})
 	return po, nil
 }
 
