@@ -10,6 +10,7 @@ import (
 	"github.com/streadway/amqp"
 )
 
+// Publish 发布消息到amqp中
 func Publish(pool goamqp.Pool, exchange, routerKey string, payload []byte, args ...declare.Argument) error {
 	return pool.Execute(func(channel *goamqp.Channel) error {
 		arg := declare.DefaultArguments()
