@@ -83,6 +83,7 @@ func (l looper) Loop(ctx context.Context, consumer Consumer) error {
 				}
 			}); err != nil {
 				logger.Errorf("pool execute fail: %v", err)
+				return err
 			}
 		}
 	}
