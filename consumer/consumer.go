@@ -14,6 +14,7 @@ import (
 
 var consumeIndex uint64
 
+// LoopCustomer 创建一个循环处理的消费者
 func LoopCustomer(pool goamqp.Pool, queue string, arguments ...declare.Argument) Looper {
 	arg := declare.DefaultArguments()
 	for _, a := range arguments {
@@ -32,10 +33,13 @@ func LoopCustomer(pool goamqp.Pool, queue string, arguments ...declare.Argument)
 	}
 }
 
+// Looper 循环接口
 type Looper interface {
+	// Loop 在context上下文内，循环处理消费者
 	Loop(ctx context.Context, consumer Consumer) error
 }
 
+// Consumer 消费者
 type Consumer func(delivery amqp.Delivery) error
 
 type looper struct {
