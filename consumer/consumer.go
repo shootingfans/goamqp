@@ -66,9 +66,13 @@ func (l looper) Loop(ctx context.Context, consumer Consumer) error {
 				for {
 					select {
 					case <-ctx.Done():
-						logger.Errorf("context done loop exit")
+						logger.Infoln("context done loop exit")
 						return nil
-					case item := <-ch:
+					case item, ok := <-ch:
+						if !ok {
+							logger.Warnln("consumer channel close, loop exit")
+							return nil
+						}
 						logger.Debugf("consumer start execute message %s ...", item.MessageId)
 						if err := consumer(item); err != nil {
 							logger.Errorf("consumer exectue message %s fail: %v", item.MessageId, err)
