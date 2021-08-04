@@ -1,6 +1,7 @@
 package goamqp
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -89,6 +90,13 @@ func TestOptions_Validate(t *testing.T) {
 		assert.Contains(t, err.Error(), "connection alive duration")
 	})
 	opt.ConnectionAliveDuration = time.Second
+	opt.RetryPolicy = nil
+	t.Run("test retry policy", func(t *testing.T) {
+		err := opt.Validate()
+		assert.NotNil(t, err)
+		assert.ErrorIs(t, err, ErrIllegalOptions)
+		assert.Contains(t, err.Error(), "retry policy")
+	})
 }
 
 func TestOptions(t *testing.T) {
@@ -151,5 +159,16 @@ func TestOptions(t *testing.T) {
 		assert.False(t, opt.Blocking)
 		WithBlocking(true)(&opt)
 		assert.True(t, opt.Blocking)
+	})
+	t.Run("test WithRetryPolicy", func(t *testing.T) {
+		assert.Nil(t, opt.RetryPolicy)
+		WithRetryPolicy(retry_policy.NewDefaultPolicy(10, time.Second*30, func(err error) {}))(&opt)
+		assert.NotNil(t, opt.RetryPolicy)
+	})
+}
+
+func TestDefaultRetryFailure(t *testing.T) {
+	assert.Panics(t, func() {
+		defaultRetryFailure(errors.New("test err"))
 	})
 }
