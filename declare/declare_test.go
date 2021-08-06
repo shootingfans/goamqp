@@ -57,11 +57,11 @@ func TestQueueDeclare(t *testing.T) {
 	)
 	assert.Nil(t, err)
 	defer po.Close()
-	err = ExchangeDeclare(po, "test-exchange-declare", "topic", WithAutoDelete(true))
+	err = ExchangeDeclare(po, "test-exchange-declare5", "topic", WithAutoDelete(true))
 	assert.Nil(t, err)
-	err = QueueDeclare(po, "test-queue-declare", WithAutoDelete(true), WithBindExchange("test-exchange-declare", "#", WithDurable(false)))
+	err = QueueDeclare(po, "test-queue-declare5", WithAutoDelete(true), WithBindExchange("test-exchange-declare5", "#", WithDurable(false)))
 	assert.Nil(t, err)
-	err = QueueDeclare(po, "test-queue-declare", WithAutoDelete(true), WithExclusive(true), WithBindExchange("test-exchange-declare", "#", WithDurable(false)))
+	err = QueueDeclare(po, "test-queue-declare5", WithAutoDelete(true), WithExclusive(true), WithBindExchange("test-exchange-declare5", "#", WithDurable(false)))
 	assert.NotNil(t, err)
 	// clean queue
 	var wg sync.WaitGroup
@@ -69,14 +69,14 @@ func TestQueueDeclare(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		po.Execute(func(channel *goamqp.Channel) error {
-			ch, err := channel.Consume("test-queue-declare", "test-consumer-111", true, false, false, false, nil)
+			ch, err := channel.Consume("test-queue-declare5", "test-consumer-111", true, false, false, false, nil)
 			assert.Nil(t, err)
 			<-ch
 			return nil
 		})
 	}()
 	assert.Nil(t, po.Execute(func(channel *goamqp.Channel) error {
-		return channel.Publish("test-exchange-declare", "", false, false, amqp.Publishing{
+		return channel.Publish("test-exchange-declare5", "", false, false, amqp.Publishing{
 			MessageId: strconv.FormatInt(time.Now().UnixNano(), 10),
 			Body:      []byte{0x01, 0x02},
 		})
@@ -91,11 +91,11 @@ func TestExchangeDeclare(t *testing.T) {
 	assert.Nil(t, err)
 	defer po.Close()
 	err = ExchangeDeclare(po, "test-exchange-declare-bind", "fanout", WithAutoDelete(true))
-	err = ExchangeDeclare(po, "test-exchange-declare", "direct", WithAutoDelete(true), WithBindExchange("test-exchange-declare-bind", "#", WithDurable(false)))
+	err = ExchangeDeclare(po, "test-exchange-declare11", "direct", WithAutoDelete(true), WithBindExchange("test-exchange-declare-bind", "#", WithDurable(false)))
 	assert.Nil(t, err)
-	err = ExchangeDeclare(po, "test-exchange-declare", "fanout", WithAutoDelete(true))
+	err = ExchangeDeclare(po, "test-exchange-declare11", "fanout", WithAutoDelete(true))
 	assert.NotNil(t, err)
-	err = QueueDeclare(po, "test-queue-declare", WithAutoDelete(true), WithBindExchange("test-exchange-declare", "#", WithDurable(false)))
+	err = QueueDeclare(po, "test-queue-declare11", WithAutoDelete(true), WithBindExchange("test-exchange-declare11", "#", WithDurable(false)))
 	assert.Nil(t, err)
 	// clean
 	var wg sync.WaitGroup
@@ -103,7 +103,7 @@ func TestExchangeDeclare(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		po.Execute(func(channel *goamqp.Channel) error {
-			ch, err := channel.Consume("test-queue-declare", "test-consumer-111", true, false, false, false, nil)
+			ch, err := channel.Consume("test-queue-declare11", "test-consumer-111", true, false, false, false, nil)
 			assert.Nil(t, err)
 			<-ch
 			return nil

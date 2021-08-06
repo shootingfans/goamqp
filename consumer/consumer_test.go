@@ -23,11 +23,11 @@ func TestLooper_Loop(t *testing.T) {
 	)
 	assert.Nil(t, err)
 	defer po.Close()
-	err = declare.ExchangeDeclare(po, "test-exchange-declare", "direct", declare.WithAutoDelete(true))
+	err = declare.ExchangeDeclare(po, "test-exchange-declare2", "direct", declare.WithAutoDelete(true))
 	assert.Nil(t, err)
-	err = declare.QueueDeclare(po, "test-queue-declare",
+	err = declare.QueueDeclare(po, "test-queue-declare2",
 		declare.WithAutoDelete(true),
-		declare.WithBindExchange("test-exchange-declare", "#", declare.WithDurable(false)),
+		declare.WithBindExchange("test-exchange-declare2", "#", declare.WithDurable(false)),
 	)
 	assert.Nil(t, err)
 	ctx, cancel := context.WithCancel(context.TODO())
@@ -37,7 +37,7 @@ func TestLooper_Loop(t *testing.T) {
 	needErr := false
 	go func() {
 		defer wg.Done()
-		assert.Nil(t, consumer.LoopCustomer(po, "test-queue-declare", declare.WithAutoAck(true)).Loop(ctx, func(delivery amqp.Delivery) error {
+		assert.Nil(t, consumer.LoopCustomer(po, "test-queue-declare2", declare.WithAutoAck(true)).Loop(ctx, func(delivery amqp.Delivery) error {
 			if needErr {
 				return errors.New("test err")
 			}
@@ -45,7 +45,7 @@ func TestLooper_Loop(t *testing.T) {
 		}))
 	}()
 	for i := 0; i < 10; i++ {
-		assert.Nil(t, publisher.Publish(po, "test-exchange-declare", "", []byte{0x01, 0x02}))
+		assert.Nil(t, publisher.Publish(po, "test-exchange-declare2", "", []byte{0x01, 0x02}))
 		time.Sleep(time.Millisecond * 200)
 		if i == 5 {
 			needErr = true
@@ -66,7 +66,7 @@ func TestLooper_Loop2(t *testing.T) {
 	defer cancel()
 	go func() {
 		defer wg.Done()
-		assert.NotNil(t, consumer.LoopCustomer(po, "test-queue-declare", declare.WithAutoAck(true)).Loop(ctx, func(delivery amqp.Delivery) error {
+		assert.NotNil(t, consumer.LoopCustomer(po, "test-queue-declare5", declare.WithAutoAck(true)).Loop(ctx, func(delivery amqp.Delivery) error {
 			return nil
 		}))
 	}()
@@ -79,11 +79,11 @@ func TestLooper_Loop3(t *testing.T) {
 	)
 	assert.Nil(t, err)
 	defer po.Close()
-	err = declare.ExchangeDeclare(po, "test-exchange-declare", "direct", declare.WithAutoDelete(true))
+	err = declare.ExchangeDeclare(po, "test-exchange-declare1", "direct", declare.WithAutoDelete(true))
 	assert.Nil(t, err)
-	err = declare.QueueDeclare(po, "test-queue-declare",
+	err = declare.QueueDeclare(po, "test-queue-declare1",
 		declare.WithAutoDelete(true),
-		declare.WithBindExchange("test-exchange-declare", "#", declare.WithDurable(false)),
+		declare.WithBindExchange("test-exchange-declare1", "#", declare.WithDurable(false)),
 	)
 	assert.Nil(t, err)
 	ctx, cancel := context.WithCancel(context.TODO())
@@ -92,16 +92,14 @@ func TestLooper_Loop3(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		assert.NotNil(t, consumer.LoopCustomer(po, "test-queue-declare", declare.WithAutoAck(true)).Loop(ctx, func(delivery amqp.Delivery) error {
+		assert.NotNil(t, consumer.LoopCustomer(po, "test-queue-declare1", declare.WithAutoAck(true)).Loop(ctx, func(delivery amqp.Delivery) error {
 			return nil
 		}))
 	}()
 	for i := 0; i < 10; i++ {
-		publisher.Publish(po, "test-exchange-declare", "", []byte{0x01, 0x02})
+		publisher.Publish(po, "test-exchange-declare1", "", []byte{0x01, 0x02})
 		time.Sleep(time.Millisecond * 200)
-		if i == 5 {
-			po.Close()
-		}
+		po.Close()
 	}
 	cancel()
 	wg.Wait()
