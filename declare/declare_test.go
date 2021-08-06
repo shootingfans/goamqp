@@ -3,14 +3,16 @@ package declare
 import (
 	"os"
 	"reflect"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
-
-	"github.com/shootingfans/goamqp"
 
 	"github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/shootingfans/goamqp"
 )
 
 func TestDeclare(t *testing.T) {
@@ -47,6 +49,73 @@ func TestDeclare(t *testing.T) {
 	})
 	assert.Nil(t, err)
 	time.Sleep(time.Second)
+}
+
+func TestQueueDeclare(t *testing.T) {
+	po, err := goamqp.NewPool(
+		goamqp.WithEndpoints(os.Getenv("AMQP_ENDPOINTS")),
+	)
+	assert.Nil(t, err)
+	defer po.Close()
+	err = ExchangeDeclare(po, "test-exchange-declare", "topic", WithAutoDelete(true))
+	assert.Nil(t, err)
+	err = QueueDeclare(po, "test-queue-declare", WithAutoDelete(true), WithBindExchange("test-exchange-declare", "#", WithDurable(false)))
+	assert.Nil(t, err)
+	err = QueueDeclare(po, "test-queue-declare", WithAutoDelete(true), WithExclusive(true), WithBindExchange("test-exchange-declare", "#", WithDurable(false)))
+	assert.NotNil(t, err)
+	// clean queue
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		po.Execute(func(channel *goamqp.Channel) error {
+			ch, err := channel.Consume("test-queue-declare", "test-consumer-111", true, false, false, false, nil)
+			assert.Nil(t, err)
+			<-ch
+			return nil
+		})
+	}()
+	assert.Nil(t, po.Execute(func(channel *goamqp.Channel) error {
+		return channel.Publish("test-exchange-declare", "", false, false, amqp.Publishing{
+			MessageId: strconv.FormatInt(time.Now().UnixNano(), 10),
+			Body:      []byte{0x01, 0x02},
+		})
+	}))
+	wg.Wait()
+}
+
+func TestExchangeDeclare(t *testing.T) {
+	po, err := goamqp.NewPool(
+		goamqp.WithEndpoints(os.Getenv("AMQP_ENDPOINTS")),
+	)
+	assert.Nil(t, err)
+	defer po.Close()
+	err = ExchangeDeclare(po, "test-exchange-declare-bind", "fanout", WithAutoDelete(true))
+	err = ExchangeDeclare(po, "test-exchange-declare", "direct", WithAutoDelete(true), WithBindExchange("test-exchange-declare-bind", "#", WithDurable(false)))
+	assert.Nil(t, err)
+	err = ExchangeDeclare(po, "test-exchange-declare", "fanout", WithAutoDelete(true))
+	assert.NotNil(t, err)
+	err = QueueDeclare(po, "test-queue-declare", WithAutoDelete(true), WithBindExchange("test-exchange-declare", "#", WithDurable(false)))
+	assert.Nil(t, err)
+	// clean
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		po.Execute(func(channel *goamqp.Channel) error {
+			ch, err := channel.Consume("test-queue-declare", "test-consumer-111", true, false, false, false, nil)
+			assert.Nil(t, err)
+			<-ch
+			return nil
+		})
+	}()
+	assert.Nil(t, po.Execute(func(channel *goamqp.Channel) error {
+		return channel.Publish("test-exchange-declare-bind", "", false, false, amqp.Publishing{
+			MessageId: strconv.FormatInt(time.Now().UnixNano(), 10),
+			Body:      []byte{0x01, 0x02},
+		})
+	}))
+	wg.Wait()
 }
 
 func TestArguments(t *testing.T) {
