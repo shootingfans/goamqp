@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shootingfans/goamqp"
+
 	"github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/shootingfans/goamqp"
 )
 
 func TestDeclare(t *testing.T) {
