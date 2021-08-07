@@ -10,7 +10,10 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/shootingfans/goamqp/retry_policy"
 )
 
 func newTestConnection(t *testing.T, opts ...Option) (*warpConnection, error) {
@@ -55,12 +58,18 @@ func TestConnectionGetChannel(t *testing.T) {
 		break
 	}
 	t.Log(strings.Join(link, " -> "))
+	conn.Close()
+	_, err = conn.getChannel()
+	assert.NotNil(t, err)
 }
 
 func TestConnectionPutChannel(t *testing.T) {
 	conn, err := newTestConnection(t, WithIdleChannelCountPerConnection(1), WithMaximumChannelCountPerConnection(2))
 	assert.Nil(t, err)
 	defer conn.Close()
+	conn.first = nil
+	conn.usedCount = 0
+	conn.allocCount = 0
 	c1, err := conn.getChannel()
 	assert.Nil(t, err)
 	c2, err := conn.getChannel()
@@ -99,4 +108,76 @@ func TestConnectionKeepAlive(t *testing.T) {
 	conn = nil
 	runtime.GC()
 	time.Sleep(time.Second * 1)
+}
+
+func TestNewConnection(t *testing.T) {
+	_, err := newConnection(1, "amqp://127.0.0.1:5672", newDefaultOptions())
+	assert.NotNil(t, err)
+}
+
+func TestConnectionAliveDuration(t *testing.T) {
+	var failErr error
+	conn, err := newTestConnection(t,
+		WithRetryPolicy(retry_policy.NewDefaultPolicy(1, time.Second, func(err error) {
+			err = failErr
+		})),
+		WithAMQPConfig(amqp.Config{
+			Dial: amqp.DefaultDial(time.Second),
+		}),
+	)
+	assert.Nil(t, err)
+	conn.connection.Close()
+	assert.NotNil(t, conn.allocChannel())
+	assert.NotNil(t, conn.initIdleChannels())
+	conn.allocCount = 0
+	conn.usedCount = 0
+	conn.first = nil
+	_, err = conn.getChannel()
+	assert.NotNil(t, err)
+	assert.Nil(t, conn.reconnect())
+	ch, err := conn.getChannel()
+	assert.Nil(t, err)
+	conn.first = nil
+	conn.allocCount = 0
+	conn.usedCount = 0
+	assert.NotNil(t, conn.putChannel(ch))
+	//time.Sleep(time.Second * 10)
+	//assert.NotNil(t, failErr)
+}
+
+func TestConnectionReconnect(t *testing.T) {
+	conn, err := newTestConnection(t, WithMaximumChannelCountPerConnection(10), WithIdleChannelCountPerConnection(10), WithAMQPConfig(amqp.Config{
+		ChannelMax: 10,
+	}))
+	assert.Nil(t, err)
+	conn.connection.Close()
+	assert.Nil(t, conn.reconnect())
+	conn.connection.Close()
+	conn.endpoint = "amqp://127.0.0.1:5672"
+	assert.NotNil(t, conn.reconnect())
+}
+
+func TestNewConnection2(t *testing.T) {
+	_, err := newTestConnection(t, WithIdleChannelCountPerConnection(10), WithAMQPConfig(amqp.Config{ChannelMax: 5}))
+	assert.NotNil(t, err)
+	conn, err := newTestConnection(t, WithIdleConnectionCount(5))
+	assert.Nil(t, err)
+	conn.connection.Close()
+	conn.opt.AMQPConfig.ChannelMax = 3
+	conn.opt.IdleChannelCountPerConnection = 10
+	assert.NotNil(t, conn.reconnect())
+}
+
+func TestConnectionPoolPutChannel(t *testing.T) {
+	conn, err := newTestConnection(t, WithIdleChannelCountPerConnection(5))
+	assert.Nil(t, err)
+	ch, err := conn.getChannel()
+	assert.Nil(t, err)
+	ch1, err := conn.getChannel()
+	assert.Nil(t, err)
+	ch1.Close()
+	ch.Close()
+	conn.putChannel(ch1)
+	conn.putChannel(ch)
+	conn.Close()
 }
