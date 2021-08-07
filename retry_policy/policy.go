@@ -1,3 +1,4 @@
+// Package retry_policy 重试策略包，提供重试策略接口，主要用于对AMQP连接断开时自动重连时的策略定义
 package retry_policy
 
 import (

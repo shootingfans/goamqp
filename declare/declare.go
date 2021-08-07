@@ -1,9 +1,11 @@
+// Package declare 定义包，用于快速完成定义队列、交换机、绑定关系的操作
 package declare
 
 import (
-	"github.com/shootingfans/goamqp"
 	"strconv"
 	"time"
+
+	"github.com/shootingfans/goamqp"
 
 	"github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"

@@ -1,3 +1,4 @@
+// Package publisher 发布包，提供快捷的广播发布功能
 package publisher
 
 import (

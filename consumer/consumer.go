@@ -1,3 +1,4 @@
+// Package consumer 消费者包，提供快捷的消费方法
 package consumer
 
 import (
